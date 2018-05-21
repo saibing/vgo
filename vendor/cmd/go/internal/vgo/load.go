@@ -259,7 +259,7 @@ func (ld *loader) importDir(path string) string {
 		if !importPathInModule(path, mod.Path) {
 			continue
 		}
-		dir, err := cmd/go/internal/vgo/load.gofetch(mod)
+		dir, err := fetch(mod)
 		if err != nil {
 			base.Errorf("vgo: %s: %v", ld.stackText(), err)
 			return ""
