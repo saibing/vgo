@@ -68,8 +68,7 @@ func fetch(filePath string) error {
 		l := len(strs[1])
 		ver = strs[1][:l - len(zipSuffix)]
 	}
-
-
+	
 	dir, err := vgo.Fetch(path, ver)
 	fmt.Printf("fetch module %s %s into dir %s\n", path, ver, dir)
 	return err
