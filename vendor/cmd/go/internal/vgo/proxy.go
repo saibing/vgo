@@ -1,5 +1,9 @@
 package vgo
 
+import (
+	"cmd/go/internal/module"
+)
+
 
 // Fetch returns the directory in the local download cache
 // holding the root of mod's source tree.
