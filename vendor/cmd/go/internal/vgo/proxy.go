@@ -1,6 +1,9 @@
 package vgo
 
 import (
+	"fmt"
+	
+	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
 )
 
