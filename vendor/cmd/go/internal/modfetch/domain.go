@@ -25,13 +25,23 @@ type metaImport struct {
 	Prefix, VCS, RepoRoot string
 }
 
-func getLookupURL(path string) string {
-	scheme := "https://"
+func isInsecure(path string) bool {
 	if strings.HasPrefix(path, "rnd-isource.huawei.com") ||
 		strings.HasPrefix(path, "rnd-github.huawei.com") ||
 		strings.HasPrefix(path, "code.huawei.com") {
+			return true
+	}
+
+	return false
+}
+
+func getLookupURL(path string) string {
+	scheme := "https://"
+
+	if isInsecure(path) {
 		scheme = "http://"
 	}
+
 	return scheme + path + "?go-get=1"
 }
 
@@ -60,6 +70,8 @@ func lookupCustomDomain(path string) (Repo, error) {
 		return nil, fmt.Errorf("unknown module %s: no go-import tags", path)
 	}
 
+	security := !isInsecure(path)
+
 	// First look for new module definition.
 	for _, imp := range imports {
 		if path == imp.Prefix || strings.HasPrefix(path, imp.Prefix+"/") {
@@ -67,7 +79,7 @@ func lookupCustomDomain(path string) (Repo, error) {
 				u, err := url.Parse(imp.RepoRoot)
 				if err != nil {
 					return nil, fmt.Errorf("invalid module URL %q", imp.RepoRoot)
-				} else if u.Scheme != "https" {
+				} else if security && iu.Scheme != "https" {
 					// TODO: Allow -insecure flag as a build flag?
 					return nil, fmt.Errorf("invalid module URL %q: must be HTTPS", imp.RepoRoot)
 				}
@@ -79,7 +91,7 @@ func lookupCustomDomain(path string) (Repo, error) {
 	// Fall back to redirections to known version control systems.
 	for _, imp := range imports {
 		if path == imp.Prefix {
-			if !strings.HasPrefix(imp.RepoRoot, "https://") {
+			if security && !strings.HasPrefix(imp.RepoRoot, "https://") {
 				// TODO: Allow -insecure flag as a build flag?
 				return nil, fmt.Errorf("invalid server URL %q: must be HTTPS", imp.RepoRoot)
 			}
