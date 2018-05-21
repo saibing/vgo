@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"cmd/go/internal/vgo"
 )
 
 const (
@@ -14,6 +16,8 @@ const (
 	homeEnv     = "HOME"
 	vgoCacheDir = "src/v/cache/"
 )
+
+var vgoRoot string
 
 type proxyHandler struct {
 	fileHandler http.Handler
@@ -28,7 +32,45 @@ func newProxyHandler(rootDir string) http.Handler {
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(r.URL.Path)
+
+	fullPath := filepath.Join(vgoRoot, r.URL.Path)
+	if !pathExist(fullPath) {
+		err := fetch(r.URL.Path)
+		if err != nil {
+			fmt.Println(err)
+			w.WriteHeader(404)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+
 	p.fileHandler.ServeHTTP(w, r)
+}
+
+func pathExist(filePath string) bool {
+	_, err := os.Stat(filePath)
+	if err != nil && os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+const (
+	zipSuffix = ".zip"
+)
+
+func fetch(filePath string) error {
+	strs := strings.Split(filePath, "/@v/")
+
+	path := strs[0][1:]
+	ver := "latest"
+	if len(strs) > 1 {
+		l := len(strs[1])
+		ver = strs[1][:l - len(zipSuffix)]
+	}
+
+	fmt.Printf("fetch module %s %s\n", path, ver)
+	return vgo.Fetch(path, ver)
 }
 
 // Serve proxy serve
@@ -39,7 +81,10 @@ func Serve() {
 	}
 
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
-	vgoRoot := filepath.Join(paths[0], vgoCacheDir)
+	gopath := paths[0]
+	vgo.InitProxy(gopath)
+
+	vgoRoot = filepath.Join(gopath, vgoCacheDir)
 	h := newProxyHandler(vgoRoot)
 	url := ":9090"
 	fmt.Printf("start go mod proxy server at %s\n", url)

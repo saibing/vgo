@@ -103,6 +103,11 @@ func Enabled() bool {
 	return enabled
 }
 
+func InitProxy(gopath string) {
+	srcV = filepath.Join(gopath, "src/v")
+	codehost.WorkRoot = filepath.Join(srcV, "cache/vcswork")
+}
+
 func InitMod() {
 	if Init(); !Enabled() || modFile != nil {
 		return

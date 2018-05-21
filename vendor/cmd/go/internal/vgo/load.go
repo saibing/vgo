@@ -283,6 +283,9 @@ func (ld *loader) importDir(path string) string {
 }
 
 func replaced(mod module.Version) *modfile.Replace {
+	if modFile == nil {
+		return nil
+	}
 	var found *modfile.Replace
 	for _, r := range modFile.Replace {
 		if r.Old == mod {
