@@ -79,7 +79,7 @@ func lookupCustomDomain(path string) (Repo, error) {
 				u, err := url.Parse(imp.RepoRoot)
 				if err != nil {
 					return nil, fmt.Errorf("invalid module URL %q", imp.RepoRoot)
-				} else if security && iu.Scheme != "https" {
+				} else if security && u.Scheme != "https" {
 					// TODO: Allow -insecure flag as a build flag?
 					return nil, fmt.Errorf("invalid module URL %q: must be HTTPS", imp.RepoRoot)
 				}
