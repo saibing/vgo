@@ -69,8 +69,10 @@ func fetch(filePath string) error {
 		ver = strs[1][:l - len(zipSuffix)]
 	}
 
-	fmt.Printf("fetch module %s %s\n", path, ver)
-	return vgo.Fetch(path, ver)
+
+	dir, err := vgo.Fetch(path, ver)
+	fmt.Printf("fetch module %s %s into dir %s\n", path, ver, dir)
+	return err
 }
 
 // Serve proxy serve
