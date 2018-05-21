@@ -65,10 +65,10 @@ func fetch(filePath string) error {
 	path := strs[0][1:]
 	ver := "latest"
 	if len(strs) > 1 {
-		l := len(strs[1])
-		ver = strs[1][:l - len(zipSuffix)]
+		pos := strings.LastIndex(strs[1], ".")
+		ver = strs[1][:pos]
 	}
-	
+
 	dir, err := vgo.Fetch(path, ver)
 	fmt.Printf("fetch module %s %s into dir %s\n", path, ver, dir)
 	return err
