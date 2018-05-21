@@ -9,6 +9,13 @@ import (
 // holding the root of mod's source tree.
 // It downloads the module if needed.
 func Fetch(path string, version string) (dir string, err error) {
-	mod := module.Version{Path: path, Version: version}
+	info, err := modfetch.Query(path, version, nil)
+	if err != nil {
+		return "", err
+	}
+
+	mod := module.Version{Path: path, Version: info.Version}
+	fmt.Printf("fetch module %s %s\n", path, info.Version)
+	fmt.Println(info)
 	return fetch(mod)
 }
