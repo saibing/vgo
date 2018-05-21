@@ -25,7 +25,7 @@
 //
 package main
 
-import "cmd/proxy"
+import "cmd/go/proxy"
 
 func main() {
 	proxy.Serve()
