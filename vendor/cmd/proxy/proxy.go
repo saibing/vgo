@@ -41,7 +41,9 @@ func Serve() {
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
 	vgoRoot := filepath.Join(paths[0], vgoCacheDir)
 	h := newProxyHandler(vgoRoot)
-	err := http.ListenAndServe(":9090", h)
+	url := ":9090"
+	fmt.Printf("start go mod proxy server at %s\n", url)
+	err := http.ListenAndServe(url, h)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
