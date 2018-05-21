@@ -25,10 +25,20 @@ type metaImport struct {
 	Prefix, VCS, RepoRoot string
 }
 
+func getLookupURL(path string) string {
+	scheme := "https://"
+	if strings.HasPrefix(path, "rnd-isource.huawei.com") ||
+		strings.HasPrefix(path, "rnd-github.huawei.com") ||
+		strings.HasPrefix(path, "code.huawei.com") {
+		scheme = "http://"
+	}
+	return scheme + path + "?go-get=1"
+}
+
 func lookupCustomDomain(path string) (Repo, error) {
 	var body io.ReadCloser
 	err := web.Get(
-		"https://"+path+"?go-get=1",
+		getLookupURL(path),
 		web.Non200OK(),
 		web.Body(&body),
 	)
