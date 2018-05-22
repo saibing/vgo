@@ -24,14 +24,21 @@ func Query(path string, version string) ([]module.Version, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	reqs := newReqs()
 	fmt.Printf("\tmodule info: %v\n", info)
-	mod := module.Version{Path: path, Version: info.Version}
+	return Required(path, info.Version)
+}
+
+func Required(path string, version string) ([]module.Version, error) {
+	reqs := newReqs()
+	mod := module.Version{Path: path, Version: version}
 	list, err := reqs.Required(mod)
 	if err != nil {
 		return nil, err
 	}
 
 	return list, nil
+}
+
+func Module(path string, version string) (*modfetch.RevInfo, error) {
+	return modfetch.Query(path, version, nil)
 }

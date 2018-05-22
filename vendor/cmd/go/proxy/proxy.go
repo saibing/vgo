@@ -10,6 +10,7 @@ import (
 
 	"cmd/go/internal/module"
 	"cmd/go/internal/vgo"
+	"encoding/json"
 )
 
 const (
@@ -20,6 +21,7 @@ const (
 
 const (
 	listSuffix    = "/@v/list"
+	latestSuffix  = "/@latest"
 	zipSuffix     = ".zip"
 	zipHashSuffix = ".ziphash"
 	infoSuffix    = ".info"
@@ -50,7 +52,39 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasSuffix(url, latestSuffix) {
+		p.latestVersionHandler(url, w, r)
+		return
+	}
+
 	p.fetchStaticFile(url, w, r)
+}
+
+func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r *http.Request) {
+	paths := strings.Split(url, "/@")
+	mod := getPath(paths)
+	ver := getVersion(paths)
+
+	revInfo, err := vgo.Module(mod, ver)
+	if err != nil {
+		fmt.Printf("\t%v\n", err)
+		w.WriteHeader(201)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	fmt.Printf("\tthe latest version: %v\n", revInfo)
+
+	data, err := json.Marshal(revInfo)
+	if err != nil {
+		fmt.Printf("\t%v\n", err)
+		w.WriteHeader(201)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.WriteHeader(200)
+	w.Write(data)
 }
 
 func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *http.Request) {
