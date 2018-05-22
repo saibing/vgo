@@ -72,7 +72,6 @@ func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *htt
 	}
 
 	if err != nil {
-		fmt.Println(err)
 		w.WriteHeader(404)
 		w.Write([]byte(err.Error()))
 		return
@@ -109,13 +108,21 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 
 func zipFetch(mod string, ver string) (string, error) {
 	dir, err := vgo.Fetch(mod, ver)
-	fmt.Printf("\tdownload zip file %s/%s.zip into dir %s\n", mod, ver, dir)
+	if err != nil {
+		fmt.Printf("\tdownload zip file failed: %v", err)
+	} else {
+		fmt.Printf("\tdownload zip file into dir %s\n", dir)
+	}
 	return dir, err
 }
 
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
-	fmt.Printf("\tmod %s/%s info: %v\n", mod, ver, list)
+	if err != nil {
+		fmt.Printf("\tquery module info failed: %v\n", err)
+	} else {
+		fmt.Printf("\tquery module info list: %v\n", list)
+	}
 	return list, err
 }
 
@@ -136,7 +143,6 @@ func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 	mod := url[1 : len(url)-len(listSuffix)]
 	list, err := infoQuery(mod, latestVersion)
 	if err != nil {
-		fmt.Println(err)
 		w.WriteHeader(201)
 		w.Write([]byte(err.Error()))
 		return
