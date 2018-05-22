@@ -200,7 +200,7 @@ func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 }
 
 // Serve proxy serve
-func Serve() {
+func Serve(ip string, port string) {
 	pathEnv := os.Getenv(goPathEnv)
 	if pathEnv == "" {
 		pathEnv = filepath.Join(os.Getenv(homeEnv), "go")
@@ -212,7 +212,7 @@ func Serve() {
 
 	vgoRoot = filepath.Join(gopath, vgoCacheDir)
 	h := newProxyHandler(vgoRoot)
-	url := ":9090"
+	url := ip + ":" + port
 	fmt.Printf("start vgo proxy server at %s\n", url)
 	err := http.ListenAndServe(url, h)
 	if err != nil {

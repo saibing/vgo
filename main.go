@@ -28,5 +28,16 @@ package main
 import "cmd/go/proxy"
 
 func main() {
-	proxy.Serve()
+	cmd := parseCmd()
+	if cmd.HelpFlag {
+		printUsage()
+		return
+	}
+
+	if cmd.VersionFlag {
+		printVersion()
+		return
+	}
+
+	proxy.Serve(cmd.IP, cmd.Port)
 }
