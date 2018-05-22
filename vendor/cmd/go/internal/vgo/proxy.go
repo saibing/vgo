@@ -26,7 +26,7 @@ func Query(path string, version string) ([]module.Version, error) {
 	}
 
 	reqs := newReqs()
-
+	fmt.Printf("\tmodule info: %v\n", info)
 	mod := module.Version{Path: path, Version: info.Version}
 	list, err := reqs.Required(mod)
 	if err != nil {
