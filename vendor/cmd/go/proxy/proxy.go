@@ -60,6 +60,8 @@ func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *htt
 		return
 	}
 
+	fmt.Println("fetch file from remote host")
+
 	var err error
 	if strings.HasSuffix(url, infoSuffix) {
 		err = p.fetch(url, infoSuffix)
