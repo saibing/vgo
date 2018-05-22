@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cmd/go/internal/module"
 	"cmd/go/internal/vgo"
 )
 
@@ -15,6 +16,16 @@ const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
 	vgoCacheDir = "src/v/cache/"
+)
+
+const (
+	listSuffix    = "/@v/list"
+	zipSuffix     = ".zip"
+	zipHashSuffix = ".ziphash"
+	infoSuffix    = ".info"
+	modSuffix     = ".mod"
+
+	latestVersion = "latest"
 )
 
 var vgoRoot string
@@ -31,17 +42,40 @@ func newProxyHandler(rootDir string) http.Handler {
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.Path)
+	url := r.URL.Path
 
-	fullPath := filepath.Join(vgoRoot, r.URL.Path)
-	if !pathExist(fullPath) {
-		err := fetch(r.URL.Path)
-		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(404)
-			w.Write([]byte(err.Error()))
-			return
-		}
+	fmt.Printf("GET %s\n", url)
+	if strings.HasSuffix(url, listSuffix) {
+		listHandler(url, w, r)
+		return
+	}
+
+	p.fetchStaticFile(url, w, r)
+}
+
+func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *http.Request) {
+	fullPath := filepath.Join(vgoRoot, url)
+	if pathExist(fullPath) {
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	var err error
+	if strings.HasSuffix(url, infoSuffix) {
+		err = p.fetch(url, infoSuffix)
+	} else if strings.HasSuffix(url, zipSuffix) {
+		err = p.fetch(url, zipSuffix)
+	} else if strings.HasSuffix(url, zipHashSuffix) {
+		err = p.fetch(url, zipHashSuffix)
+	} else if strings.HasSuffix(url, modSuffix) {
+		err = p.fetch(url, modSuffix)
+	}
+
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(404)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
 	p.fileHandler.ServeHTTP(w, r)
@@ -55,23 +89,67 @@ func pathExist(filePath string) bool {
 	return true
 }
 
-const (
-	zipSuffix = ".zip"
-)
+func (p *proxyHandler) fetch(filePath string, suffix string) error {
+	url := filePath[:len(filePath)-len(suffix)]
+	paths := strings.Split(url, "/@v/")
 
-func fetch(filePath string) error {
-	strs := strings.Split(filePath, "/@v/")
+	mod := getPath(paths)
+	ver := getVersion(paths)
 
-	path := strs[0][1:]
-	ver := "latest"
-	if len(strs) > 1 {
-		pos := strings.LastIndex(strs[1], ".")
-		ver = strs[1][:pos]
+	var err error
+	switch suffix {
+	case zipSuffix, zipHashSuffix:
+		_, err = zipFetch(mod, ver)
+	case infoSuffix, modSuffix:
+		_, err = infoQuery(mod, ver)
 	}
 
-	dir, err := vgo.Fetch(path, ver)
-	fmt.Printf("fetch module %s %s into dir %s\n", path, ver, dir)
 	return err
+}
+
+func zipFetch(mod string, ver string) (string, error) {
+	dir, err := vgo.Fetch(mod, ver)
+	fmt.Printf("\tdownload zip file %s/%s.zip into dir %s\n", mod, ver, dir)
+	return dir, err
+}
+
+func infoQuery(mod string, ver string) ([]module.Version, error) {
+	list, err := vgo.Query(mod, ver)
+	fmt.Printf("\tmod %s/%s info: %v\n", mod, ver, list)
+	return list, err
+}
+
+func getPath(paths []string) string {
+	return paths[0][1:]
+}
+
+func getVersion(paths []string) string {
+	ver := latestVersion
+	if len(paths) > 1 {
+		ver = paths[1]
+	}
+	return ver
+}
+
+func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
+	url := filePath
+	mod := url[1 : len(url)-len(listSuffix)]
+	list, err := infoQuery(mod, latestVersion)
+	if err != nil {
+		fmt.Println(err)
+		w.WriteHeader(201)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	var versions []string
+
+	for _, l := range list {
+		versions = append(versions, l.Version)
+	}
+
+	w.WriteHeader(200)
+	w.Write([]byte(strings.Join(versions, "\n")))
 }
 
 // Serve proxy serve
