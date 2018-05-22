@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,11 +41,27 @@ func newProxyHandler(rootDir string) http.Handler {
 	return proxy
 }
 
+func logRequest(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n %c[1;40;32m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+}
+
+func logInfo(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Printf("\n %c[1;40;31m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+}
+
+func logError(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	fmt.Println(msg)
+}
+
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
 
-	fmt.Printf("GET %s\n", url)
+	logRequest(fmt.Sprintf("GET %s\n", url))
+
 	if strings.HasSuffix(url, listSuffix) {
 		listHandler(url, w, r)
 		return
@@ -67,17 +82,17 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 
 	revInfo, err := vgo.Module(mod, ver)
 	if err != nil {
-		fmt.Printf("vgo: %v\n", err)
+		logError("vgo: %v", err)
 		w.WriteHeader(201)
 		w.Write([]byte(err.Error()))
 		return
 	}
 
-	fmt.Printf("vgo: the latest version: %v\n", revInfo)
+	logInfo("vgo: the latest version: %v", revInfo)
 
 	data, err := json.Marshal(revInfo)
 	if err != nil {
-		fmt.Printf("vgo: %v\n", err)
+		logError("vgo: %v", err)
 		w.WriteHeader(201)
 		w.Write([]byte(err.Error()))
 		return
@@ -94,7 +109,7 @@ func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *htt
 		return
 	}
 
-	fmt.Printf("vgo: fetch file from remote host: %s\n", url)
+	logInfo("vgo: fetch file from remote host: %s", url)
 
 	var err error
 	if strings.HasSuffix(url, infoSuffix) {
@@ -145,9 +160,9 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 func zipFetch(mod string, ver string) (string, error) {
 	dir, err := vgo.Fetch(mod, ver)
 	if err != nil {
-		fmt.Printf("vgo: download zip file failed: %v", err)
+		logError("vgo: download zip file failed: %v", err)
 	} else {
-		fmt.Printf("vgo: download zip file into dir %s\n", dir)
+		logInfo("vgo: download zip file into dir %s", dir)
 	}
 	return dir, err
 }
@@ -155,9 +170,9 @@ func zipFetch(mod string, ver string) (string, error) {
 func listVersions(mod string) ([]string, error) {
 	versions, err := vgo.Versions(mod)
 	if err != nil {
-		fmt.Printf("vgo: list version failed: %v\n", err)
+		logError("vgo: list version failed: %v", err)
 	} else {
-		fmt.Printf("vgo: version list: %v\n", versions)
+		logInfo("vgo: version list: %v", versions)
 	}
 
 	return versions, err
@@ -166,9 +181,9 @@ func listVersions(mod string) ([]string, error) {
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
 	if err != nil {
-		fmt.Printf("vgo: query module info failed: %v\n", err)
+		logError("vgo: query module info failed: %v", err)
 	} else {
-		fmt.Printf("vgo: query module info list: %v\n", list)
+		logInfo("vgo: module info list: %v", list)
 	}
 	return list, err
 }
@@ -213,9 +228,9 @@ func Serve(ip string, port string) {
 	vgoRoot = filepath.Join(gopath, vgoCacheDir)
 	h := newProxyHandler(vgoRoot)
 	url := ip + ":" + port
-	fmt.Printf("start vgo proxy server at %s\n", url)
+	logInfo("start vgo proxy server at %s", url)
 	err := http.ListenAndServe(url, h)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		logError("listen serve failed, %v", err)
 	}
 }

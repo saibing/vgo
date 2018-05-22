@@ -1,8 +1,6 @@
 package vgo
 
 import (
-	"fmt"
-
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
 )
@@ -12,7 +10,6 @@ import (
 // It downloads the module if needed.
 func Fetch(path string, version string) (dir string, err error) {
 	mod := module.Version{Path: path, Version: version}
-	fmt.Printf("vgo: download zip file %s %s\n", path, version)
 	return fetch(mod)
 }
 
@@ -28,7 +25,6 @@ func Query(path string, version string) ([]module.Version, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("vgo: module info: %v\n", info)
 	return required(path, info.Version)
 }
 
