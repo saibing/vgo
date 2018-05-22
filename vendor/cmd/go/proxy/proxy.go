@@ -67,17 +67,17 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 
 	revInfo, err := vgo.Module(mod, ver)
 	if err != nil {
-		fmt.Printf("\t%v\n", err)
+		fmt.Printf("vgo: %v\n", err)
 		w.WriteHeader(201)
 		w.Write([]byte(err.Error()))
 		return
 	}
 
-	fmt.Printf("\tthe latest version: %v\n", revInfo)
+	fmt.Printf("vgo: the latest version: %v\n", revInfo)
 
 	data, err := json.Marshal(revInfo)
 	if err != nil {
-		fmt.Printf("\t%v\n", err)
+		fmt.Printf("vgo: %v\n", err)
 		w.WriteHeader(201)
 		w.Write([]byte(err.Error()))
 		return
@@ -94,7 +94,7 @@ func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *htt
 		return
 	}
 
-	fmt.Println("fetch file from remote host")
+	fmt.Printf("vgo: fetch file from remote host: %s\n", url)
 
 	var err error
 	if strings.HasSuffix(url, infoSuffix) {
@@ -145,9 +145,9 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 func zipFetch(mod string, ver string) (string, error) {
 	dir, err := vgo.Fetch(mod, ver)
 	if err != nil {
-		fmt.Printf("\tdownload zip file failed: %v", err)
+		fmt.Printf("vgo: download zip file failed: %v", err)
 	} else {
-		fmt.Printf("\tdownload zip file into dir %s\n", dir)
+		fmt.Printf("vgo: download zip file into dir %s\n", dir)
 	}
 	return dir, err
 }
@@ -155,9 +155,9 @@ func zipFetch(mod string, ver string) (string, error) {
 func listVersions(mod string) ([]string, error) {
 	versions, err := vgo.Versions(mod)
 	if err != nil {
-		fmt.Printf("\tlist version failed: %v\n", err)
+		fmt.Printf("vgo: list version failed: %v\n", err)
 	} else {
-		fmt.Printf("\tversion list: %v\n", versions)
+		fmt.Printf("vgo: version list: %v\n", versions)
 	}
 
 	return versions, err
@@ -166,9 +166,9 @@ func listVersions(mod string) ([]string, error) {
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
 	if err != nil {
-		fmt.Printf("\tquery module info failed: %v\n", err)
+		fmt.Printf("vgo: query module info failed: %v\n", err)
 	} else {
-		fmt.Printf("\tquery module info list: %v\n", list)
+		fmt.Printf("vgo: query module info list: %v\n", list)
 	}
 	return list, err
 }
