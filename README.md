@@ -2,7 +2,7 @@
 
 vgo包管理工具的代理服务器，支持常见的go语言库托管网站，如：github.com, gopkg.in, golang.org,
 
-同时支持华为内部的几个git托管网站：rnd-isource.huawei.com, rnd-github.huawei.com, code.huawei.com。
+另外也支持华为内部的几个git托管网站：rnd-isource.huawei.com, rnd-github.huawei.com, code.huawei.com。
 
 ## 安装部署
 
