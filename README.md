@@ -78,7 +78,7 @@ machine api.github.com login saibing password 0ef4a5827997f8dxxxxxxxxxx6c97aeb7e
 但你不需要安装go编译器, vgoproxy不会编译任何go语言工程。事实上：我已经把vgo的所有的命令行功能都屏蔽了，新提供了http server的功能。
 
 
-##　客户端配置
+## 客户端配置
 
 在客户端环境，配置很简单了，在使用vgo管理包的go语言工程环境中，设置环境变量：
 
