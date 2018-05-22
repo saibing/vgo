@@ -152,6 +152,17 @@ func zipFetch(mod string, ver string) (string, error) {
 	return dir, err
 }
 
+func listVersions(mod string) ([]string, error) {
+	versions, err := vgo.Versions(mod)
+	if err != nil {
+		fmt.Printf("\tlist version failed: %v\n", err)
+	} else {
+		fmt.Printf("\tversion list: %v\n", versions)
+	}
+
+	return versions, err
+}
+
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
 	if err != nil {
@@ -177,17 +188,11 @@ func getVersion(paths []string) string {
 func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 	url := filePath
 	mod := url[1 : len(url)-len(listSuffix)]
-	list, err := infoQuery(mod, latestVersion)
+	versions, err := listVersions(mod)
 	if err != nil {
-		w.WriteHeader(200)
+		w.WriteHeader(201)
 		w.Write([]byte(""))
 		return
-	}
-
-	var versions []string
-
-	for _, l := range list {
-		versions = append(versions, l.Version)
 	}
 
 	w.WriteHeader(200)
