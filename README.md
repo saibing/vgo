@@ -25,9 +25,7 @@ $ vgoproxy
 start vgo proxy server at http://127.0.0.1:9090
 ```
 
-vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在vgo代码的基础增加了proxy功能
-
-所以vgoproxy下载与管理包的原理与要求与vgo程序相同:
+vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在vgo代码的基础增加了proxy功能, 所以vgoproxy下载与管理包的原理与要求与vgo程序相同:
 
 - 配置git
 vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.gitconfig文件中增加:
@@ -62,7 +60,7 @@ vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.g
 
 vgoproxy下载github.com的开源代码时，需要有api.github.com的帐号与权限，否则有下载过多的github.com项目时，会报limit的限制,
 
-请在$HOME/.netrc增加如下配置：
+为了突破这个限制，需要在$HOME/.netrc增加配置api.github.com的登录用户与token：
 
 ```bash
 machine api.github.com login saibing password 0ef4a5827997f8dxxxxxxxxxx6c97aeb7e
@@ -70,13 +68,9 @@ machine api.github.com login saibing password 0ef4a5827997f8dxxxxxxxxxx6c97aeb7e
 
 - 设置GOPATH环境变量
 
-如果没有设置GOPATH, 会使用默认的GOPATH值：$HOME/go
+如果没有设置GOPATH, 会使用默认的GOPATH值：$HOME/go, vgoproxy会把第三方开源软件缓存在$GOPATH/src/v/cache目录下面。
 
-vgoproxy会把第三方开源软件缓存在$GOPATH/src/v/cache目录下面。
-
-但你不需要安装go编译器, vgoproxy不会编译任何go语言工程。事实上：
-
-我已经把vgo的所有的命令行功能都屏蔽了，新提供了http server的功能。
+但你不需要安装go编译器, vgoproxy不会编译任何go语言工程。事实上：我已经把vgo的所有的命令行功能都屏蔽了，新提供了http server的功能。
 
 
 ##　客户端配置
@@ -87,9 +81,7 @@ vgoproxy会把第三方开源软件缓存在$GOPATH/src/v/cache目录下面。
 export GOPROXY=http://127.0.0.1:9090
 ```
 
-然后使用vgo命令即可以连接到vgo proxy下载第三方的开源库。因为vgoproxy的存在，
-
-每个vgo客户端就不需要像vgoproxy安装部署一样，设置一堆的东西。
+然后使用vgo命令即可以连接到vgo proxy下载第三方的开源库。因为vgoproxy的存在，每个vgo客户端就不需要像vgoproxy安装部署一样，设置一堆的东西。
 
 ## 注意
 
