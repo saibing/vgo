@@ -6,6 +6,7 @@ vgo包管理工具的代理服务器，支持常见的go语言库托管网站，
 github.com
 gopkg.in
 golang.org
+...
 ```
 
 另外也支持华为内部的几个git托管网站：
