@@ -12,7 +12,7 @@ golang.org
 另外也支持华为内部的几个git托管网站：
 
 ```bash
-rnd-isource.huawei.com,
+rnd-isource.huawei.com
 rnd-github.huawei.com
 code.huawei.com
 ```
