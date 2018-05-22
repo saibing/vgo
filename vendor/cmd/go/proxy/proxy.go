@@ -145,8 +145,8 @@ func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 	mod := url[1 : len(url)-len(listSuffix)]
 	list, err := infoQuery(mod, latestVersion)
 	if err != nil {
-		w.WriteHeader(201)
-		w.Write([]byte(err.Error()))
+		w.WriteHeader(200)
+		w.Write([]byte(""))
 		return
 	}
 
