@@ -1,8 +1,20 @@
 # vgoproxy
 
-vgo包管理工具的代理服务器，支持常见的go语言库托管网站，如：github.com, gopkg.in, golang.org,
+vgo包管理工具的代理服务器，支持常见的go语言库托管网站，如：
 
-另外也支持华为内部的几个git托管网站：rnd-isource.huawei.com, rnd-github.huawei.com, code.huawei.com。
+```bash
+github.com
+gopkg.in
+golang.org
+```
+
+另外也支持华为内部的几个git托管网站：
+
+```bash
+rnd-isource.huawei.com,
+rnd-github.huawei.com
+code.huawei.com
+```
 
 ## 服务端安装部署
 
