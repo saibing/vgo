@@ -1,26 +1,27 @@
-# Versioned Go Prototype (vgo)
+# vgoproxy
 
-This repository holds a prototype of what the go command
-might look like with integrated support for package versioning.
+vgo包管理工具的代理服务器，支持常见的go语言库托管网站，如：github.com, gopkg.in, golang.org,
 
-See [research.swtch.com/vgo](https://research.swtch.com/vgo)
-for documents about the design.
+同时支持华为内部的几个git托管网站：rnd-isource.huawei.com, rnd-github.huawei.com, code.huawei.com。
 
-## Download/Install
+## 安装部署
 
-Use `go get -u golang.org/x/vgo`.
+```bash
+$ go get -u -v -insecure rnd-github.huawei.com/go/vgoproxy
+$ vgoproxy
+start vgo proxy server at http://127.0.0.1:9090
+```
 
-You can also manually
-git clone the repository to `$GOPATH/src/golang.org/x/vgo`.
+## 使用环境配置
 
-## Report Issues / Send Patches
+在使用vgo管理包的go语言工程环境中，设置环境变量：
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+```bash
+export GOPROXY=http://127.0.0.1:9090
+```
 
-This is still a very early prototype.
-You are likely to run into bugs.
-Please file bugs in the main Go issue tracker,
-[golang.org/issue](https://golang.org/issue),
-and put the prefix `x/vgo:` in the issue title.
+然后使用vgo命令即可以连接vgo proxy下载第三方的开源库。
 
-Thank you.
+## 注意
+
+个人开发，仅限于华为内部项目小组使用。
