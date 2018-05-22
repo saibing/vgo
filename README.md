@@ -28,6 +28,7 @@ start vgo proxy server at http://127.0.0.1:9090
 vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在vgo代码的基础增加了proxy功能, 所以vgoproxy下载与管理包的原理与要求与vgo程序相同:
 
 - 配置git
+
 vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.gitconfig文件中增加:
 
 ```bash
