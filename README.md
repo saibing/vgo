@@ -29,7 +29,7 @@ vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在
 
 - 配置git
 
-vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.gitconfig文件中增加:
+大多数情况下，vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.gitconfig文件中增加:
 
 ```bash
 [http]
@@ -56,6 +56,10 @@ vgoproxy使用git下载代码，需要外网上网的proxy权限, 请在$HOME/.g
     name = xxx
     email = xxx@huawei.com
 ```
+
+> 如果使用其它配置管理工具如svn, hg托管的代码工程，vgoproxy也是支持的，但需要安装相应的软件，比如svn
+
+> 同时需要配置环境让这些工具能够连上外网，因为不常见，这里就不详细描述了。
 
 - 配置.netrc文件
 
