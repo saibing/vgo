@@ -43,17 +43,17 @@ func newProxyHandler(rootDir string) http.Handler {
 
 func logRequest(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n %c[1;40;32m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+	fmt.Printf("\n%c[1;40;32m%s%c[0m\n\n", 0x1B, msg, 0x1B)
 }
 
 func logInfo(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n %c[1;40;31m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+	fmt.Println(msg)
 }
 
 func logError(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Println(msg)
+	fmt.Printf("\n%c[1;40;31m%s%c[0m\n\n", 0x1B, msg, 0x1B)
 }
 
 // ServeHTTP serve http
