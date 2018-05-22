@@ -43,7 +43,7 @@ func newProxyHandler(rootDir string) http.Handler {
 
 func logRequest(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n%c[1;40;32m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+	fmt.Printf("%c[1;40;32m%s%c[0m\n", 0x1B, msg, 0x1B)
 }
 
 func logInfo(format string, a ...interface{}) {
@@ -53,14 +53,14 @@ func logInfo(format string, a ...interface{}) {
 
 func logError(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	fmt.Printf("\n%c[1;40;31m%s%c[0m\n\n", 0x1B, msg, 0x1B)
+	fmt.Printf("%c[1;40;31m%s%c[0m\n", 0x1B, msg, 0x1B)
 }
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
 
-	logRequest(fmt.Sprintf("GET %s\n", url))
+	logRequest(fmt.Sprintf("GET %s", url))
 
 	if strings.HasSuffix(url, listSuffix) {
 		listHandler(url, w, r)
