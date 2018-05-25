@@ -61,6 +61,21 @@ func (f *File) AddModuleStmt(path string) {
 	})
 }
 
+func (f *File) AddComment(text string) {
+	if f.Syntax == nil {
+		f.Syntax = new(FileSyntax)
+	}
+	f.Syntax.Stmt = append(f.Syntax.Stmt, &CommentBlock{
+		Comments: Comments{
+			Before: []Comment{
+				{
+					Token: text,
+				},
+			},
+		},
+	})
+}
+
 type VersionFixer func(path, version string) (string, error)
 
 func Parse(file string, data []byte, fix VersionFixer) (*File, error) {
@@ -297,15 +312,7 @@ func moduleMajorVersion(p string) (string, error) {
 		return major, nil
 	}
 
-	start := 0
-	for i := 0; i < len(p); i++ {
-		if p[i] == '/' {
-			if isMajorVersion(p[start:i]) {
-				return "", fmt.Errorf("module path contains non-final version element %s", p[start:i])
-			}
-			start = i + 1
-		}
-	}
+	start := strings.LastIndex(p, "/") + 1
 	v := p[start:]
 	if !isMajorVersion(v) {
 		return "v1", nil
