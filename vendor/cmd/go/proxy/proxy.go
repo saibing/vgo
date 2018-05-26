@@ -45,7 +45,7 @@ func newProxyHandler(rootDir string) http.Handler {
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
 
-	logRequest(fmt.Sprintf("GET %s", url))
+	logRequest(fmt.Sprintf("GET %s from %s", url, r.RemoteAddr))
 
 	if strings.HasSuffix(url, listSuffix) {
 		listHandler(url, w, r)
