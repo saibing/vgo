@@ -7,6 +7,7 @@ package Main_test
 import (
 	"cmd/go/internal/modconv"
 	"cmd/go/internal/vgo"
+	"internal/testenv"
 	"io/ioutil"
 	"os"
 	"runtime"
@@ -101,4 +102,78 @@ func TestLocalModule(t *testing.T) {
 	tg.must(ioutil.WriteFile(tg.path("x/z/z.go"), []byte(`package z`), 0666))
 	tg.cd(tg.path("x/y"))
 	tg.run("-vgo", "build")
+}
+
+func TestTags(t *testing.T) {
+	// Test that build tags are used. See golang.org/issue/24053.
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+	`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`// +build tag1
+
+		package y
+	`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/y.go"), []byte(`// +build tag2
+
+		package y
+	`), 0666))
+	tg.cd(tg.path("x"))
+
+	tg.runFail("-vgo", "list", "-f={{.GoFiles}}")
+	tg.grepStderr("no Go source files", "no Go source files without tags")
+
+	tg.run("-vgo", "list", "-f={{.GoFiles}}", "-tags=tag1")
+	tg.grepStdout(`\[x.go\]`, "Go source files for tag1")
+
+	tg.run("-vgo", "list", "-f={{.GoFiles}}", "-tags", "tag2")
+	tg.grepStdout(`\[y.go\]`, "Go source files for tag2")
+
+	tg.run("-vgo", "list", "-f={{.GoFiles}}", "-tags", "tag1 tag2")
+	tg.grepStdout(`\[x.go y.go\]`, "Go source files for tag1 and tag2")
+}
+
+func TestFillGoMod(t *testing.T) {
+	testenv.MustHaveExternalNetwork(t)
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.setenv("HOME", tg.path("."))
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`
+		package x
+	`), 0666))
+
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+	`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/Gopkg.lock"), []byte(`
+[[projects]]
+  name = "rsc.io/sampler"
+  version = "v1.0.0"
+	`), 0666))
+
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "build", "-v")
+	tg.grepStderr("copying requirements from .*Gopkg.lock", "did not copy Gopkg.lock")
+	tg.run("-vgo", "list", "-m")
+	tg.grepStderrNot("copying requirements from .*Gopkg.lock", "should not copy Gopkg.lock again")
+	tg.grepStdout("rsc.io/sampler.*v1.0.0", "did not copy Gopkg.lock")
+
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+	`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/Gopkg.lock"), []byte(`
+	`), 0666))
+
+	tg.run("-vgo", "list")
+	tg.grepStderr("copying requirements from .*Gopkg.lock", "did not copy Gopkg.lock")
+	tg.run("-vgo", "list")
+	tg.grepStderrNot("copying requirements from .*Gopkg.lock", "should not copy Gopkg.lock again")
+
 }
