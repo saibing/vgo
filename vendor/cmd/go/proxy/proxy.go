@@ -68,7 +68,7 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 	revInfo, err := vgo.Module(mod, ver)
 	if err != nil {
 		logError("vgo: %v", err)
-		w.WriteHeader(201)
+		w.WriteHeader(404)
 		w.Write([]byte(err.Error()))
 		return
 	}
@@ -78,7 +78,7 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 	data, err := json.Marshal(revInfo)
 	if err != nil {
 		logError("vgo: %v", err)
-		w.WriteHeader(201)
+		w.WriteHeader(404)
 		w.Write([]byte(err.Error()))
 		return
 	}
@@ -190,7 +190,7 @@ func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 	mod := url[1 : len(url)-len(listSuffix)]
 	versions, err := listVersions(mod)
 	if err != nil {
-		w.WriteHeader(201)
+		w.WriteHeader(404)
 		w.Write([]byte(""))
 		return
 	}
