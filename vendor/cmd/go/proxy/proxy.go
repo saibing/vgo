@@ -73,7 +73,7 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 		return
 	}
 
-	logInfo("vgo: the latest version: %v", revInfo)
+	logInfo("vgo: the latest version: %v", *revInfo)
 
 	data, err := json.Marshal(revInfo)
 	if err != nil {
