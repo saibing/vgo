@@ -137,6 +137,27 @@ func TestTags(t *testing.T) {
 	tg.grepStdout(`\[x.go y.go\]`, "Go source files for tag1 and tag2")
 }
 
+func TestAllVsVendor(t *testing.T) {
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.must(os.MkdirAll(tg.path("x/vendor/v"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module m
+	`), 0666))
+
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/vendor/v/v.go"), []byte(`package v; import "golang.org/x/crypto"`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/vendor/v.go"), []byte(`package main`), 0666))
+
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "list", "all")
+	tg.grepStdout(`^m$`, "expected m")
+	tg.grepStdout(`^m/vendor$`, "must see package named vendor")
+	tg.grepStdoutNot(`vendor/`, "must not see vendored packages")
+}
+
 func TestFillGoMod(t *testing.T) {
 	testenv.MustHaveExternalNetwork(t)
 	tg := testgo(t)
@@ -176,4 +197,21 @@ func TestFillGoMod(t *testing.T) {
 	tg.run("-vgo", "list")
 	tg.grepStderrNot("copying requirements from .*Gopkg.lock", "should not copy Gopkg.lock again")
 
+}
+
+func TestConvertLegacyConfig(t *testing.T) {
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/Gopkg.lock"), []byte(`
+	  [[projects]]
+		name = "github.com/pkg/errors"
+		packages = ["."]
+		revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+		version = "v0.8.0"`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/main.go"), []byte("package x // import \"x\"\n import _ \"github.com/pkg/errors\""), 0666))
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "build")
 }
