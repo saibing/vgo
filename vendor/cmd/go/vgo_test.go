@@ -221,6 +221,29 @@ func TestVgoBadDomain(t *testing.T) {
 	tg.grepStderr("tcp.*nonexistent.rsc.io", "expected error for nonexistent.rsc.io")
 }
 
+func TestVgoVendor(t *testing.T) {
+	tg := testgo(t)
+	defer tg.cleanup()
+
+	wd, _ := os.Getwd()
+	tg.cd(filepath.Join(wd, "testdata/vendormod"))
+	tg.run("-vgo", "list", "-m")
+	tg.grepStdout(`^x`, "expected to see module x")
+	tg.grepStdout(`=> ./x`, "expected to see replacement for module x")
+	tg.grepStdout(`^w`, "expected to see module w")
+
+	tg.run("-vgo", "vendor", "-v")
+	tg.grepStderr(`^# x v1.0.0 => ./x`, "expected to see module x with replacement")
+	tg.grepStderr(`^x`, "expected to see package x")
+	tg.grepStderr(`^# y v1.0.0 => ./y`, "expected to see module y with replacement")
+	tg.grepStderr(`^y`, "expected to see package y")
+	tg.grepStderr(`^# z v1.0.0 => ./z`, "expected to see module z with replacement")
+	tg.grepStderr(`^z`, "expected to see package z")
+	tg.grepStderrNot(`w`, "expected NOT to see unused module w")
+
+	tg.must(os.RemoveAll(filepath.Join(wd, "testdata/vendormod/vendor")))
+}
+
 func TestFillGoMod(t *testing.T) {
 	testenv.MustHaveExternalNetwork(t)
 	tg := testgo(t)
@@ -266,6 +289,7 @@ func TestQueryExcluded(t *testing.T) {
 	defer tg.cleanup()
 	tg.makeTempdir()
 
+	tg.setenv("HOME", tg.path("."))
 	tg.must(os.MkdirAll(tg.path("x"), 0777))
 	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x; import _ "github.com/gorilla/mux"`), 0666))
 	gomod := []byte(`
@@ -313,4 +337,24 @@ func TestConvertLegacyConfig(t *testing.T) {
 	// something even newer). Check for the older version to
 	// make sure Gopkg.lock was properly used.
 	tg.grepStderr("v0.6.0", "expected github.com/pkg/errors at v0.6.0")
+}
+
+func TestVerifyNotDownloaded(t *testing.T) {
+	testenv.MustHaveExternalNetwork(t)
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+	tg.setenv("GOPATH", tg.path("gp"))
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+		require github.com/pkg/errors v0.8.0
+	`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/go.modverify"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
+`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x`), 0666))
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "verify")
+	tg.mustNotExist(filepath.Join(tg.path("gp"), "/src/v/cache/github.com/pkg/errors/@v/v0.8.0.zip"))
+	tg.mustNotExist(filepath.Join(tg.path("gp"), "/src/v/github.com/pkg"))
 }

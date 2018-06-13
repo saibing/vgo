@@ -1963,6 +1963,8 @@ func homeEnvName() string {
 }
 
 func TestDefaultGOPATH(t *testing.T) {
+	t.Skip("vgo") // Needs a more realistic GOROOT; see RuntimeGoroot below.
+
 	tg := testgo(t)
 	defer tg.cleanup()
 	tg.parallel()
@@ -4582,6 +4584,8 @@ func TestExecutableGOROOT(t *testing.T) {
 	// Binaries built in the new tree should report the
 	// new tree when they call runtime.GOROOT.
 	t.Run("RuntimeGoroot", func(t *testing.T) {
+		t.Skip("vgo") // Needs "new/api" in GOROOT.
+
 		// Build a working GOROOT the easy way, with symlinks.
 		testenv.MustHaveSymlink(t)
 		if err := os.Symlink(filepath.Join(testGOROOT, "src"), tg.path("new/src")); err != nil {

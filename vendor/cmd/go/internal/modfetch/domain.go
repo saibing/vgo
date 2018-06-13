@@ -16,7 +16,6 @@ import (
 
 	"cmd/go/internal/modfetch/codehost"
 	"cmd/go/internal/modfetch/gitrepo"
-	web "cmd/go/internal/web2"
 )
 
 // metaImport represents the parsed <meta name="go-import"
@@ -29,7 +28,7 @@ func isInsecure(path string) bool {
 	if strings.HasPrefix(path, "rnd-isource.huawei.com") ||
 		strings.HasPrefix(path, "rnd-github.huawei.com") ||
 		strings.HasPrefix(path, "code.huawei.com") {
-			return true
+		return true
 	}
 
 	return false
@@ -54,11 +53,7 @@ func lookupCustomDomain(path string) (Repo, error) {
 		return nil, fmt.Errorf("unknown module %s: not a domain name", path)
 	}
 	var body io.ReadCloser
-	err := web.Get(
-		getLookupURL(path),
-		web.Non200OK(),
-		web.Body(&body),
-	)
+	err := webGetGoGet(getLookupURL(path), &body)
 	if body != nil {
 		defer body.Close()
 	}
