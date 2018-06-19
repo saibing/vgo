@@ -166,9 +166,9 @@ func listVersions(mod string) ([]string, error) {
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
 	if err != nil {
-		logError("vgo: query module info failed: %v", err)
+		logError("vgo: query %s/%s module info failed: %v", mod, ver, err)
 	} else {
-		logInfo("vgo: module info list: %v", list)
+		logInfo("vgo: %s/%s module info list: %v", mod, ver, list)
 	}
 	return list, err
 }

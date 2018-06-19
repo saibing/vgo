@@ -3,6 +3,7 @@ package vgo
 import (
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
+	"fmt"
 )
 
 // Fetch returns the directory in the local download cache
@@ -36,6 +37,7 @@ func required(path string, version string) ([]module.Version, error) {
 		return nil, err
 	}
 
+	fmt.Printf("required %s/%s module list %v\n", path, version, list)
 	return list, nil
 }
 
