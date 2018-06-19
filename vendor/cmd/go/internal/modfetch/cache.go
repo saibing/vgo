@@ -67,7 +67,7 @@ type cachedInfo struct {
 }
 
 func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
-	fmt.Printf("cache stat result: %v, %v\n", recv, r.path)
+	fmt.Printf("cache stat result: %v, %v\n", rev, r.path)
 	c := r.cache.Do("stat:"+rev, func() interface{} {
 		file, info, err := readDiskStat(r.path, rev)
 		if err == nil {
