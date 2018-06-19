@@ -207,6 +207,7 @@ var errNotCached = fmt.Errorf("not in cache")
 // writeDiskStat(file, info) to write a new cache entry.
 func readDiskStat(path, rev string) (file string, info *RevInfo, err error) {
 	file, data, err := readDiskCache(path, rev, "info")
+	fmt.Printf("read disk stat %s, %s, %v\n", file, string(data), err)
 	if err != nil {
 		if file, info, err := readDiskStatByHash(path, rev); err == nil {
 			return file, info, nil
@@ -304,7 +305,10 @@ func writeDiskStat(file string, info *RevInfo) error {
 	if err != nil {
 		return err
 	}
-	return writeDiskCache(file, js)
+
+	err = writeDiskCache(file, js)
+	fmt.Printf("wrie disk stat %s, %s, %v\n", file, string(js), err)
+	return err
 }
 
 // writeDiskGoMod writes a go.mod cache entry.
