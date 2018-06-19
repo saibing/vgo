@@ -80,6 +80,7 @@ func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
 		info, err = r.r.Stat(rev)
 		fmt.Printf("do cache stat result: %v, %v\n", info, err)
 		if err == nil {
+			fmt.Printf("will write disk stat %s, %v\n", file, info)
 			if err := writeDiskStat(file, info); err != nil {
 				fmt.Fprintf(os.Stderr, "go: writing stat cache: %v\n", err)
 			}
