@@ -159,6 +159,7 @@ func Enabled() bool {
 
 func InitProxy(gopath string) {
 	SrcMod = filepath.Join(gopath, "src/mod")
+	modfetch.CacheRoot = filepath.Join(SrcMod, "cache")
 	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcswork")
 }
 
