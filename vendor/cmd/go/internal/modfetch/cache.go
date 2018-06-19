@@ -67,7 +67,7 @@ type cachedInfo struct {
 }
 
 func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
-	fmt.Printf("cache stat result: %v, %v\n", rev, r.path)
+	//fmt.Printf("cache stat result: %v, %v\n", rev, r.path)
 	c := r.cache.Do("stat:"+rev, func() interface{} {
 		file, info, err := readDiskStat(r.path, rev)
 		if err == nil {
@@ -78,9 +78,9 @@ func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
 			fmt.Fprintf(os.Stderr, "vgo: finding %s %s\n", r.path, rev)
 		}
 		info, err = r.r.Stat(rev)
-		fmt.Printf("do cache stat result: %v, %v\n", info, err)
+		//fmt.Printf("do cache stat result: %v, %v\n", info, err)
 		if err == nil {
-			fmt.Printf("will write disk stat %s, %v\n", file, info)
+			//fmt.Printf("will write disk stat %s, %v\n", file, info)
 			if err := writeDiskStat(file, info); err != nil {
 				fmt.Fprintf(os.Stderr, "go: writing stat cache: %v\n", err)
 			}
@@ -95,7 +95,7 @@ func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
 		return cachedInfo{info, err}
 	}).(cachedInfo)
 
-	fmt.Printf("finished ache stat result: %v, %v\n", c.info, c.err)
+	//fmt.Printf("finished cache stat result: %v, %v\n", c.info, c.err)
 	if c.err != nil {
 		return nil, c.err
 	}
@@ -169,7 +169,7 @@ func (r *cachingRepo) Zip(version, tmpdir string) (string, error) {
 // already cached on local disk.
 func Stat(path, rev string) (*RevInfo, error) {
 	_, info, err := readDiskStat(path, rev)
-	fmt.Printf("first stat result: %v, %v\n", info, err)
+	//fmt.Printf("first stat result: %v, %v\n", info, err)
 	if err == nil {
 		return info, nil
 	}
@@ -212,7 +212,7 @@ var errNotCached = fmt.Errorf("not in cache")
 // writeDiskStat(file, info) to write a new cache entry.
 func readDiskStat(path, rev string) (file string, info *RevInfo, err error) {
 	file, data, err := readDiskCache(path, rev, "info")
-	fmt.Printf("read disk stat %s, %s, %v\n", file, string(data), err)
+	//fmt.Printf("read disk stat %s, %s, %v\n", file, string(data), err)
 	if err != nil {
 		if file, info, err := readDiskStatByHash(path, rev); err == nil {
 			return file, info, nil
@@ -312,7 +312,7 @@ func writeDiskStat(file string, info *RevInfo) error {
 	}
 
 	err = writeDiskCache(file, js)
-	fmt.Printf("wrie disk stat %s, %s, %v\n", file, string(js), err)
+	//fmt.Printf("wrie disk stat %s, %s, %v\n", file, string(js), err)
 	return err
 }
 
