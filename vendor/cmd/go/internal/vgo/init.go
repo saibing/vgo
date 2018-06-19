@@ -40,8 +40,29 @@ var (
 	Target   module.Version
 
 	gopath string
-	srcV   string
+	SrcMod string // GOPATH/src/mod directory where versioned cache lives
+
+	CmdModInit   bool   // go mod -init flag
+	CmdModModule string // go mod -module flag
+
 )
+
+// TargetPackages returns the list of packages in the target (top-level) module.
+func TargetPackages() []string {
+	return matchPackages("ALL", []module.Version{Target})
+}
+
+// ModFile returns the parsed go.mod file.
+//
+// Note that after calling ImportPaths or LoadBuildList,
+// the require statements in the modfile.File are no longer
+// the source of truth and will be ignored: edits made directly
+// will be lost at the next call to WriteGoMod.
+// To make permanent changes to the require statements
+// in go.mod, edit it before calling ImportPaths or LoadBuildList.
+func ModFile() *modfile.File {
+	return modFile
+}
 
 func BinDir() string {
 	if !Enabled() {
@@ -110,17 +131,23 @@ func Init() {
 		base.Fatalf("go: %v", err)
 	}
 
-	root, _ := FindModuleRoot(cwd, "", MustBeVgo)
-	if root == "" {
-		// If invoked as vgo, insist on a mod file.
-		if MustBeVgo {
-			base.Fatalf("cannot determine module root; please create a go.mod file there")
+	if CmdModInit {
+		// Running 'go mod -init': go.mod will be created in current directory.
+		ModRoot = cwd
+	} else {
+		root, _ := FindModuleRoot(cwd, "", MustBeVgo)
+		if root == "" {
+			// If invoked as vgo, insist on a mod file.
+			if MustBeVgo {
+				base.Fatalf("cannot determine module root; please create a go.mod file there")
+			}
+			return
 		}
-		return
+		ModRoot = root
 	}
+
 	enabled = true
-	ModRoot = root
-	search.SetModRoot(root)
+	search.SetModRoot(ModRoot)
 }
 
 func Enabled() bool {
@@ -131,8 +158,8 @@ func Enabled() bool {
 }
 
 func InitProxy(gopath string) {
-	srcV = filepath.Join(gopath, "src/v")
-	codehost.WorkRoot = filepath.Join(srcV, "cache/vcswork")
+	SrcMod = filepath.Join(gopath, "src/mod")
+	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcswork")
 }
 
 func InitMod() {
@@ -148,14 +175,33 @@ func InitMod() {
 	if _, err := os.Stat(filepath.Join(gopath, "go.mod")); err == nil {
 		base.Fatalf("$GOPATH/go.mod exists but should not")
 	}
-	srcV = filepath.Join(list[0], "src/v")
-	codehost.WorkRoot = filepath.Join(srcV, "cache/vcswork")
+
+	srcV := filepath.Join(list[0], "src/v")
+	SrcMod = filepath.Join(list[0], "src/mod")
+	infoV, errV := os.Stat(srcV)
+	_, errMod := os.Stat(SrcMod)
+	if errV == nil && infoV.IsDir() && errMod != nil && os.IsNotExist(errMod) {
+		os.Rename(srcV, SrcMod)
+	}
+
+	modfetch.CacheRoot = filepath.Join(SrcMod, "cache")
+	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcswork")
+
+	if CmdModInit {
+		// Running go mod -init: do legacy module conversion
+		// (go.mod does not exist yet).
+		legacyModInit()
+		return
+	}
 
 	gomod := filepath.Join(ModRoot, "go.mod")
 	data, err := ioutil.ReadFile(gomod)
 	if err != nil {
-		legacyModInit()
-		return
+		if os.IsNotExist(err) {
+			legacyModInit()
+			return
+		}
+		base.Fatalf("vgo: %v", err)
 	}
 
 	f, err := modfile.Parse(gomod, data, fixVersion)
@@ -185,7 +231,7 @@ func InitMod() {
 		excluded[x.Mod] = true
 	}
 	Target = f.Module.Mod
-	writeGoMod()
+	WriteGoMod()
 }
 
 func allowed(m module.Version) bool {
@@ -287,6 +333,10 @@ func FindModuleRoot(dir, limit string, legacyConfigOK bool) (root, file string) 
 
 // Exported only for testing.
 func FindModulePath(dir string) (string, error) {
+	if CmdModModule != "" {
+		// Running go mod -init -module=x/y/z; return x/y/z.
+		return CmdModModule, nil
+	}
 	for _, gpdir := range filepath.SplitList(cfg.BuildContext.GOPATH) {
 		src := filepath.Join(gpdir, "src") + string(filepath.Separator)
 		if strings.HasPrefix(dir, src) {
@@ -363,7 +413,8 @@ func findImportComment(file string) string {
 	return path
 }
 
-func writeGoMod() {
+// WriteGoMod writes the current build list back to go.mod.
+func WriteGoMod() {
 	writeModHash()
 
 	if buildList != nil {
@@ -376,6 +427,7 @@ func writeGoMod() {
 
 	file := filepath.Join(ModRoot, "go.mod")
 	old, _ := ioutil.ReadFile(file)
+	modFile.Cleanup() // clean file after edits
 	new, err := modFile.Format()
 	if err != nil {
 		base.Fatalf("vgo: %v", err)

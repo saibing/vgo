@@ -27,6 +27,7 @@ import (
 	"cmd/go/internal/get"
 	"cmd/go/internal/help"
 	"cmd/go/internal/list"
+	"cmd/go/internal/modcmd"
 	"cmd/go/internal/run"
 	"cmd/go/internal/test"
 	"cmd/go/internal/tool"
@@ -49,11 +50,10 @@ func init() {
 		get.CmdGet,
 		work.CmdInstall,
 		list.CmdList,
+		modcmd.CmdMod,
 		run.CmdRun,
 		test.CmdTest,
 		tool.CmdTool,
-		vgo.CmdVendor,
-		vgo.CmdVerify,
 		version.CmdVersion,
 		vet.CmdVet,
 
@@ -64,6 +64,7 @@ func init() {
 		help.HelpFileType,
 		help.HelpGopath,
 		help.HelpImportPath,
+		vgo.HelpModule,
 		help.HelpPackages,
 		test.HelpTestflag,
 		test.HelpTestfunc,
@@ -123,8 +124,21 @@ func Main() {
 		os.Exit(2)
 	}
 
-	if !vgo.MustBeVgo {
-		if vgo.Init(); vgo.Enabled() {
+	switch args[0] {
+	case "mod":
+		// Skip vgo.Init (which may insist on go.mod existing)
+		// so that go mod -init has a chance to write the file.
+	case "vendor":
+		fmt.Fprintf(os.Stderr, "go vendor is now go mod -vendor\n")
+		os.Exit(2)
+	case "verify":
+		fmt.Fprintf(os.Stderr, "go verify is now go mod -verify\n")
+		os.Exit(2)
+	default:
+		// Run vgo.Init so that each subcommand doesn't have to worry about it.
+		// Also install the vgo get command instead of the old go get command in vgo mode.
+		vgo.Init()
+		if !vgo.MustBeVgo && vgo.Enabled() {
 			// Didn't do this above, so do it now.
 			*get.CmdGet = *vgo.CmdGet
 		}

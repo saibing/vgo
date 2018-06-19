@@ -131,7 +131,7 @@ func runGet(cmd *base.Command, args []string) {
 				if err != nil {
 					return err // TODO
 				}
-				imports, testImports, err := imports.ScanDir(dir, v.Tags)
+				imports, testImports, err := scanDir(dir, v.Tags)
 				for _, path := range imports {
 					xxx
 				}
@@ -141,7 +141,7 @@ func runGet(cmd *base.Command, args []string) {
 			}
 		*/
 	}
-	writeGoMod()
+	WriteGoMod()
 
 	if len(args) > 0 {
 		InstallHook(args)

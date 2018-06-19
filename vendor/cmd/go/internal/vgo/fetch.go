@@ -26,28 +26,28 @@ import (
 // holding the root of mod's source tree.
 // It downloads the module if needed.
 func fetch(mod module.Version) (dir string, err error) {
-	if r := replaced(mod); r != nil {
-		if r.New.Version == "" {
-			dir = r.New.Path
+	if r := Replacement(mod); r.Path != "" {
+		if r.Version == "" {
+			dir = r.Path
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(ModRoot, dir)
 			}
 			return dir, nil
 		}
-		mod = r.New
+		mod = r
 	}
 
 	modpath := mod.Path + "@" + mod.Version
-	dir = filepath.Join(srcV, modpath)
+	dir = filepath.Join(SrcMod, modpath)
 	if files, _ := ioutil.ReadDir(dir); len(files) == 0 {
-		zipfile := filepath.Join(srcV, "cache", mod.Path, "@v", mod.Version+".zip")
+		zipfile := filepath.Join(SrcMod, "cache", mod.Path, "@v", mod.Version+".zip")
 		if _, err := os.Stat(zipfile); err == nil {
 			// Use it.
 			// This should only happen if the v/cache directory is preinitialized
 			// or if src/v/modpath was removed but not src/v/cache.
 			fmt.Fprintf(os.Stderr, "vgo: extracting %s %s\n", mod.Path, mod.Version)
 		} else {
-			if err := os.MkdirAll(filepath.Join(srcV, "cache", mod.Path, "@v"), 0777); err != nil {
+			if err := os.MkdirAll(filepath.Join(SrcMod, "cache", mod.Path, "@v"), 0777); err != nil {
 				return "", err
 			}
 			fmt.Fprintf(os.Stderr, "vgo: downloading %s %s\n", mod.Path, mod.Version)
@@ -159,7 +159,7 @@ func checkModHash(mod module.Version) {
 		return
 	}
 
-	data, err := ioutil.ReadFile(filepath.Join(srcV, "cache", mod.Path, "@v", mod.Version+".ziphash"))
+	data, err := ioutil.ReadFile(filepath.Join(SrcMod, "cache", mod.Path, "@v", mod.Version+".ziphash"))
 	if err != nil {
 		base.Fatalf("vgo: verifying %s %s: %v", mod.Path, mod.Version, err)
 	}
@@ -183,7 +183,7 @@ func checkModHash(mod module.Version) {
 }
 
 func findModHash(mod module.Version) string {
-	data, err := ioutil.ReadFile(filepath.Join(srcV, "cache", mod.Path, "@v", mod.Version+".ziphash"))
+	data, err := ioutil.ReadFile(filepath.Join(SrcMod, "cache", mod.Path, "@v", mod.Version+".ziphash"))
 	if err != nil {
 		return ""
 	}

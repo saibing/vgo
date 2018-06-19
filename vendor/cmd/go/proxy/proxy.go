@@ -15,7 +15,7 @@ import (
 const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
-	vgoCacheDir = "src/v/cache/"
+	vgoCacheDir = "src/mod/cache/"
 )
 
 const (

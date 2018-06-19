@@ -6,7 +6,6 @@ package vgo
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"go/build"
 	"io/ioutil"
@@ -23,6 +22,7 @@ import (
 	"cmd/go/internal/modfile"
 	"cmd/go/internal/module"
 	"cmd/go/internal/mvs"
+	"cmd/go/internal/par"
 	"cmd/go/internal/search"
 	"cmd/go/internal/semver"
 )
@@ -60,7 +60,54 @@ func AddImports(gofiles []string) {
 		ld.importList(imports, levelBuild)
 		ld.importList(testImports, levelBuild)
 	})
-	writeGoMod()
+	WriteGoMod()
+}
+
+// LoadBuildList loads and returns the build list from go.mod.
+// The loading of the build list happens automatically in ImportPaths:
+// LoadBuildList need only be called if ImportPaths is not
+// (typically in commands that care about the module but
+// no particular package).
+func LoadBuildList() []module.Version {
+	if Init(); !Enabled() {
+		base.Fatalf("vgo: LoadBuildList called but vgo not enabled")
+	}
+	InitMod()
+	iterate(func(*loader) {})
+	WriteGoMod()
+	return buildList
+}
+
+// BuildList returns the module build list,
+// typically constructed by a previous call to
+// LoadBuildList or ImportPaths.
+func BuildList() []module.Version {
+	return buildList
+}
+
+// SetBuildList sets the module build list.
+// The caller is responsible for ensuring that the list is valid.
+func SetBuildList(list []module.Version) {
+	buildList = list
+}
+
+// ImportMap returns the actual package import path
+// for an import path found in source code.
+// If the given import path does not appear in the source code
+// for the packages that have been loaded, ImportMap returns the empty string.
+func ImportMap(path string) string {
+	return importmap[path]
+}
+
+// PackageDir returns the directory containing the source code
+// for the package named by the import path.
+func PackageDir(path string) string {
+	return pkgdir[path]
+}
+
+// PackageModule returns the module providing the package named by the import path.
+func PackageModule(path string) module.Version {
+	return pkgmod[path]
 }
 
 func ImportPaths(args []string) []string {
@@ -70,7 +117,7 @@ func ImportPaths(args []string) []string {
 	InitMod()
 
 	paths := importPaths(args)
-	writeGoMod()
+	WriteGoMod()
 	return paths
 }
 
@@ -80,8 +127,12 @@ func importPaths(args []string) []string {
 	case "test", "vet":
 		level = levelTest
 	}
+	isALL := len(args) == 1 && args[0] == "ALL"
 	cleaned := search.CleanImportPaths(args)
 	iterate(func(ld *loader) {
+		if isALL {
+			ld.tags = map[string]bool{"*": true}
+		}
 		args = expandImportPaths(cleaned)
 		for i, pkg := range args {
 			if pkg == "." || pkg == ".." || strings.HasPrefix(pkg, "./") || strings.HasPrefix(pkg, "../") {
@@ -220,7 +271,7 @@ func (ld *loader) importPkg(path string, level importLevel) {
 
 	ld.pkgdir[realPath] = dir
 
-	imports, testImports, err := imports.ScanDir(dir, ld.tags)
+	imports, testImports, err := scanDir(dir, ld.tags)
 	if err != nil {
 		base.Errorf("vgo: %s [%s]: %v", ld.stackText(), dir, err)
 		return
@@ -260,6 +311,13 @@ func (ld *loader) importDir(path string) string {
 		}
 	}
 
+	if cfg.BuildGetmode == "vendor" {
+		// Using -getmode=vendor, everything the module needs
+		// (beyond the current module and standard library)
+		// must be in the module's vendor directory.
+		return filepath.Join(ModRoot, "vendor", path)
+	}
+
 	var mod1 module.Version
 	var dir1 string
 	for _, mod := range buildList {
@@ -290,17 +348,24 @@ func (ld *loader) importDir(path string) string {
 	return ""
 }
 
-func replaced(mod module.Version) *modfile.Replace {
-	if modFile == nil {
-		return nil
+// Replacement the replacement for mod, if any, from go.mod.
+// If there is no replacement for mod, Replacement returns
+// a module.Version with Path == "".
+func Replacement(mod module.Version) module.Version {
+	if modFile == nil || modFile.Replace == nil {
+		return module.Version{}
 	}
+
 	var found *modfile.Replace
 	for _, r := range modFile.Replace {
 		if r.Old == mod {
 			found = r // keep going
 		}
 	}
-	return found
+	if found == nil {
+		return module.Version{}
+	}
+	return found.New
 }
 
 func importPathInModule(path, mpath string) bool {
@@ -340,6 +405,7 @@ func findMissing(m missing) {
 
 type mvsReqs struct {
 	extra []module.Version
+	cache par.Cache
 }
 
 func newReqs(extra ...module.Version) *mvsReqs {
@@ -350,30 +416,40 @@ func newReqs(extra ...module.Version) *mvsReqs {
 }
 
 func (r *mvsReqs) Required(mod module.Version) ([]module.Version, error) {
-	list, err := r.required(mod)
-	if err != nil {
-		return nil, err
+	type cached struct {
+		list []module.Version
+		err  error
 	}
-	if *getU {
-		for i := range list {
-			list[i].Version = "none"
+
+	c := r.cache.Do(mod, func() interface{} {
+		list, err := r.required(mod)
+		if err != nil {
+			return cached{nil, err}
 		}
-		return list, nil
-	}
-	for i, mv := range list {
-		for excluded[mv] {
-			mv1, err := r.Next(mv)
-			if err != nil {
-				return nil, err
+		if *getU {
+			for i := range list {
+				list[i].Version = "none"
 			}
-			if mv1.Version == "" {
-				return nil, fmt.Errorf("%s(%s) depends on excluded %s(%s) with no newer version available", mod.Path, mod.Version, mv.Path, mv.Version)
-			}
-			mv = mv1
+			return cached{list, nil}
 		}
-		list[i] = mv
-	}
-	return list, nil
+		for i, mv := range list {
+			for excluded[mv] {
+				mv1, err := r.next(mv)
+				if err != nil {
+					return cached{nil, err}
+				}
+				if mv1.Version == "" {
+					return cached{nil, fmt.Errorf("%s(%s) depends on excluded %s(%s) with no newer version available", mod.Path, mod.Version, mv.Path, mv.Version)}
+				}
+				mv = mv1
+			}
+			list[i] = mv
+		}
+
+		return cached{list, nil}
+	}).(cached)
+
+	return c.list, c.err
 }
 
 var vgoVersion = []byte(modconv.Prefix)
@@ -393,10 +469,10 @@ func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 	}
 
 	origPath := mod.Path
-	if repl := replaced(mod); repl != nil {
-		if repl.New.Version == "" {
+	if repl := Replacement(mod); repl.Path != "" {
+		if repl.Version == "" {
 			// TODO: need to slip the new version into the tags list etc.
-			dir := repl.New.Path
+			dir := repl.Path
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(ModRoot, dir)
 			}
@@ -415,7 +491,7 @@ func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 			}
 			return list, nil
 		}
-		mod = repl.New
+		mod = repl
 	}
 
 	if mod.Version == "none" {
@@ -428,71 +504,16 @@ func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 		// TODO: return nil, fmt.Errorf("invalid semantic version %q", mod.Version)
 	}
 
-	gomod := filepath.Join(srcV, "cache", mod.Path, "@v", mod.Version+".mod")
-	infofile := filepath.Join(srcV, "cache", mod.Path, "@v", mod.Version+".info")
-	var f *modfile.File
-	if data, err := ioutil.ReadFile(gomod); err == nil {
-		// If go.mod has a //vgo comment at the start,
-		// it was auto-converted from a legacy lock file.
-		// The auto-conversion details may have bugs and
-		// may be fixed in newer versions of vgo.
-		// We ignore cached go.mod files if they do not match
-		// our own vgoVersion.
-		if !bytes.HasPrefix(data, vgoVersion[:len("//vgo")]) || bytes.HasPrefix(data, vgoVersion) {
-			f, err := modfile.Parse(gomod, data, nil)
-			if err != nil {
-				return nil, err
-			}
-			var list []module.Version
-			for _, r := range f.Require {
-				list = append(list, r.Mod)
-			}
-			return list, nil
-		}
-		f, err = modfile.Parse("go.mod", data, nil)
-		if err != nil {
-			return nil, fmt.Errorf("parsing downloaded go.mod: %v", err)
-		}
-	} else {
-		if !quietLookup {
-			fmt.Fprintf(os.Stderr, "vgo: finding %s %s\n", mod.Path, mod.Version)
-		}
-		repo, err := modfetch.Lookup(mod.Path)
-		if err != nil {
-			base.Errorf("vgo: %s: %v\n", mod.Path, err)
-			return nil, err
-		}
-		info, err := repo.Stat(mod.Version)
-		if err != nil {
-			base.Errorf("vgo: %s %s: %v\n", mod.Path, mod.Version, err)
-			return nil, err
-		}
-		data, err := repo.GoMod(info.Version)
-		if err != nil {
-			base.Errorf("vgo: %s %s: %v\n", mod.Path, mod.Version, err)
-			return nil, err
-		}
-
-		f, err = modfile.Parse("go.mod", data, nil)
-		if err != nil {
-			return nil, fmt.Errorf("parsing downloaded go.mod: %v", err)
-		}
-
-		dir := filepath.Dir(gomod)
-		if err := os.MkdirAll(dir, 0777); err != nil {
-			return nil, fmt.Errorf("caching go.mod: %v", err)
-		}
-		js, err := json.Marshal(info)
-		if err != nil {
-			return nil, fmt.Errorf("internal error: json failure: %v", err)
-		}
-		if err := ioutil.WriteFile(infofile, js, 0666); err != nil {
-			return nil, fmt.Errorf("caching info: %v", err)
-		}
-		if err := ioutil.WriteFile(gomod, data, 0666); err != nil {
-			return nil, fmt.Errorf("caching go.mod: %v", err)
-		}
+	data, err := modfetch.GoMod(mod.Path, mod.Version)
+	if err != nil {
+		base.Errorf("vgo: %s %s: %v\n", mod.Path, mod.Version, err)
+		return nil, err
 	}
+	f, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing downloaded go.mod: %v", err)
+	}
+
 	if mpath := f.Module.Mod.Path; mpath != origPath && mpath != mod.Path {
 		return nil, fmt.Errorf("downloaded %q and got module %q", mod.Path, mpath)
 	}
@@ -509,8 +530,6 @@ func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 	}
 	return list, nil
 }
-
-var quietLookup bool
 
 func (*mvsReqs) Max(v1, v2 string) string {
 	if semver.Compare(v1, v2) == -1 {
@@ -534,23 +553,14 @@ func (*mvsReqs) Latest(path string) (module.Version, error) {
 	return module.Version{Path: path, Version: info.Version}, nil
 }
 
-var versionCache = make(map[string][]string)
-
 func versions(path string) ([]string, error) {
-	list, ok := versionCache[path]
-	if !ok {
-		var err error
-		repo, err := modfetch.Lookup(path)
-		if err != nil {
-			return nil, err
-		}
-		list, err = repo.Versions("")
-		if err != nil {
-			return nil, err
-		}
-		versionCache[path] = list
+	// Note: modfetch.Lookup and repo.Versions are cached,
+	// so there's no need for us to add extra caching here.
+	repo, err := modfetch.Lookup(path)
+	if err != nil {
+		return nil, err
 	}
-	return list, nil
+	return repo.Versions("")
 }
 
 func (*mvsReqs) Previous(m module.Version) (module.Version, error) {
@@ -565,7 +575,10 @@ func (*mvsReqs) Previous(m module.Version) (module.Version, error) {
 	return module.Version{Path: m.Path, Version: "none"}, nil
 }
 
-func (*mvsReqs) Next(m module.Version) (module.Version, error) {
+// next returns the next version of m.Path after m.Version.
+// It is only used by the exclusion processing in the Required method,
+// not called directly by MVS.
+func (*mvsReqs) next(m module.Version) (module.Version, error) {
 	list, err := versions(m.Path)
 	if err != nil {
 		return module.Version{}, err
@@ -575,4 +588,32 @@ func (*mvsReqs) Next(m module.Version) (module.Version, error) {
 		return module.Version{Path: m.Path, Version: list[i]}, nil
 	}
 	return module.Version{Path: m.Path, Version: "none"}, nil
+}
+
+// scanDir is like imports.ScanDir but elides known magic imports from the list,
+// so that vgo does not go looking for packages that don't really exist.
+//
+// The only known magic imports are appengine and appengine/*.
+// These are so old that they predate "go get" and did not use URL-like paths.
+// Most code today now uses google.golang.org/appengine instead,
+// but not all code has been so updated. When we mostly ignore build tags
+// during "vgo vendor", we look into "// +build appengine" files and
+// may see these legacy imports. We drop them so that the module
+// search does not look for modules to try to satisfy them.
+func scanDir(path string, tags map[string]bool) (imports_, testImports []string, err error) {
+	imports_, testImports, err = imports.ScanDir(path, tags)
+
+	filter := func(x []string) []string {
+		w := 0
+		for _, pkg := range x {
+			if pkg != "appengine" && !strings.HasPrefix(pkg, "appengine/") &&
+				pkg != "appengine_internal" && !strings.HasPrefix(pkg, "appengine_internal/") {
+				x[w] = pkg
+				w++
+			}
+		}
+		return x
+	}
+
+	return filter(imports_), filter(testImports), err
 }
