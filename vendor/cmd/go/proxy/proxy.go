@@ -29,20 +29,28 @@ const (
 	latestVersion = "latest"
 )
 
+type Config struct {
+	GoPath string `json:"gopath"`
+	HTTPSite []string `json:"httpSite"`
+	Replace map[string]string `json:"replace"`
+}
+
 var vgoRoot string
 
 type proxyHandler struct {
+	cfg *Config
 	fileHandler http.Handler
 }
 
-func newProxyHandler(rootDir string) http.Handler {
-	proxy := &proxyHandler{}
-	proxy.fileHandler = http.FileServer(http.Dir(rootDir))
+func newProxyHandler(rootDir string, cfg *Config) http.Handler {
+	proxy := &proxyHandler{cfg: cfg, fileHandler:http.FileServer(http.Dir(rootDir))}
 	return proxy
 }
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	p.replace(r)
+
 	url := r.URL.Path
 
 	logRequest(fmt.Sprintf("GET %s from %s", url, r.RemoteAddr))
@@ -58,6 +66,15 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.fetchStaticFile(url, w, r)
+}
+
+func (p *proxyHandler) replace(r *http.Request) {
+	for k, v := range p.cfg.Replace {
+		if strings.HasPrefix(r.URL.Path, k) {
+			r.URL.Path = v + r.URL.Path[len(k):]
+			return
+		}
+	}
 }
 
 func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r *http.Request) {
@@ -200,7 +217,11 @@ func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
 }
 
 // Serve proxy serve
-func Serve(ip string, port string) {
+func Serve(ip string, port string, cfg *Config) {
+	if cfg.GoPath != "" {
+		os.Setenv(goPathEnv, cfg.GoPath)
+	}
+
 	pathEnv := os.Getenv(goPathEnv)
 	if pathEnv == "" {
 		pathEnv = filepath.Join(os.Getenv(homeEnv), "go")
@@ -211,7 +232,7 @@ func Serve(ip string, port string) {
 	vgo.InitProxy(gopath)
 
 	vgoRoot = filepath.Join(gopath, vgoCacheDir)
-	h := newProxyHandler(vgoRoot)
+	h := newProxyHandler(vgoRoot, cfg)
 	url := ip + ":" + port
 	logInfo("start vgo proxy server at %s", url)
 	err := http.ListenAndServe(url, h)
