@@ -57,9 +57,14 @@ func main() {
 		GoPath:"/home/bingo/.gomod",
 		HTTPSite:[]string {"code.huawei.com", "rnd-isource.huawei.com", "rnd-github.huawei.com"},
 		Replace:map[string]string{
-			"/golang.org/x": "/github.com/golang",
+			"golang.org/x/net": "github.com/golang/net",
+			"golang.org/x/tools": "github.com/golang/tools",
+			"golang.org/x": "github.com/golang",
+			"golang.org": "github.com",
 		},
 	}
+
+	cfg.Init()
 
 	proxy.Serve(cmd.IP, cmd.Port, cfg)
 }

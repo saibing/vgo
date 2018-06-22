@@ -8,14 +8,21 @@ import (
 	"strings"
 
 	"cmd/go/internal/module"
+		"encoding/json"
+	"io/ioutil"
+	"bytes"
+	"sort"
+	"io"
+	"archive/zip"
+	"os/exec"
 	"cmd/go/internal/vgo"
-	"encoding/json"
 )
 
 const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
 	vgoCacheDir = "src/mod/cache/"
+	vgoModDir = "src/mod"
 )
 
 const (
@@ -33,9 +40,23 @@ type Config struct {
 	GoPath string `json:"gopath"`
 	HTTPSite []string `json:"httpSite"`
 	Replace map[string]string `json:"replace"`
+	sortKeys []string
+}
+
+func (cfg *Config) Init() {
+	for k := range cfg.Replace {
+		cfg.sortKeys = append(cfg.sortKeys, k)
+	}
+
+	sort.Slice(cfg.sortKeys, func(i, j int) bool{
+		return len(cfg.sortKeys[i]) >= len(cfg.sortKeys[j])
+	})
+
+	logInfo("sort keys: %v\n", cfg.sortKeys)
 }
 
 var vgoRoot string
+var vgoModRoot string
 
 type proxyHandler struct {
 	cfg *Config
@@ -49,11 +70,15 @@ func newProxyHandler(rootDir string, cfg *Config) http.Handler {
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	p.replace(r)
 
+	originURL := r.URL.Path
+	replaced := p.replace(r)
 	url := r.URL.Path
 
 	logRequest(fmt.Sprintf("GET %s from %s", url, r.RemoteAddr))
+	if replaced {
+		logRequest(fmt.Sprintf("Origin url %s", originURL))
+	}
 
 	if strings.HasSuffix(url, listSuffix) {
 		listHandler(url, w, r)
@@ -65,16 +90,30 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.fetchStaticFile(url, w, r)
+	p.fetchStaticFile(originURL, w, r)
 }
 
-func (p *proxyHandler) replace(r *http.Request) {
-	for k, v := range p.cfg.Replace {
-		if strings.HasPrefix(r.URL.Path, k) {
-			r.URL.Path = v + r.URL.Path[len(k):]
-			return
+func (p *proxyHandler) replace(r *http.Request) bool {
+	k, v := p.findReplace(r.URL.Path)
+	if k == "" || v == "" {
+		return false
+	}
+
+	k = "/" + k
+	v = "/" + v
+
+	r.URL.Path = v + r.URL.Path[len(k):]
+	return true
+}
+
+func (p *proxyHandler) findReplace(url string) (string, string) {
+	for _, k := range p.cfg.sortKeys {
+		if strings.HasPrefix(url, "/"+k) {
+			return k, p.cfg.Replace[k]
 		}
 	}
+
+	return "", ""
 }
 
 func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r *http.Request) {
@@ -104,10 +143,11 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 	w.Write(data)
 }
 
-func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *http.Request) {
+func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, r *http.Request) {
+	url := r.URL.Path
 	fullPath := filepath.Join(vgoRoot, url)
 	if pathExist(fullPath) {
-		p.fileHandler.ServeHTTP(w, r)
+		p.downloadFile(originURL, w, r)
 		return
 	}
 
@@ -125,8 +165,245 @@ func (p *proxyHandler) fetchStaticFile(url string, w http.ResponseWriter, r *htt
 	}
 
 	if err != nil {
-		w.WriteHeader(404)
-		w.Write([]byte(err.Error()))
+		write404Error("vgo: fetch file failed %s", w, err)
+		return
+	}
+
+	p.downloadFile(originURL, w, r)
+}
+
+func write404Error(format string, w http.ResponseWriter, err error) {
+	logError(format, err.Error())
+	w.WriteHeader(404)
+	w.Write([]byte(err.Error()))
+}
+
+func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *http.Request) {
+	url := r.URL.Path
+
+	if  originURL == url {
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	if strings.HasSuffix(url, modSuffix) {
+		p.downloadMod(originURL, w, r)
+		return
+	}
+
+	if strings.HasSuffix(url, zipSuffix) {
+		p.downloadZip(originURL, w, r)
+		return
+	}
+
+	p.fileHandler.ServeHTTP(w, r)
+}
+
+func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *http.Request) {
+	originPath := filepath.Join(vgoRoot, originURL)
+	r.URL.Path = originURL
+	logInfo("vgo: download zip file: %s", originPath)
+	if pathExist(originPath) {
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	targetDir := filepath.Dir(originPath)
+	if !pathExist(targetDir) {
+		logInfo("vgo: mkdir %s", targetDir)
+		err := os.MkdirAll(targetDir, fileMode)
+		if err != nil {
+			write404Error("vgo: read mod file parent targetDir failed %s", w, err)
+			return
+		}
+	}
+
+	targetFileName := filepath.Base(originPath)
+
+	//logInfo("vgo: unzip file %s to %s", fullPath, targetDir)
+	//err := unzip(fullPath, targetDir)
+	//if err != nil {
+	//	write404Error("vgo: unzip file failed %s", w, err)
+	//	return
+	//}
+
+
+
+	key, value := p.findReplace(originURL)
+	sourceDir := filepath.Join(vgoModRoot, value + "@" + targetFileName[:len(targetFileName) - len(zipSuffix)])
+	err := copyDir(sourceDir, filepath.Join(targetDir, key))
+	if err != nil {
+		write404Error("vgo: move file failed: %s", w, err)
+		return
+	}
+
+	err = zipDir(targetDir, targetFileName)
+	if err != nil {
+		write404Error("vgo: zip file failed: %s", w, err)
+		return
+	}
+
+	removeDir(filepath.Join(targetDir, strings.Split(key, string(os.PathSeparator))[0]))
+
+	p.fileHandler.ServeHTTP(w, r)
+}
+
+const (
+	fileMode = 0755
+)
+
+func removeDir(dir string) error {
+	logInfo("vgo: remove dir %s", dir)
+	return os.RemoveAll(dir)
+}
+
+
+func copyDir(source string, target string) error {
+	logInfo("vgo: mkdir %s", target)
+	err := os.MkdirAll(target, fileMode)
+	if err != nil {
+		return err
+	}
+
+	shell := fmt.Sprintf("cp -r %s/* %s", source, target)
+	return execShell(shell)
+}
+
+func execShell(s string) error {
+	logInfo("vgo: %s", s)
+
+	cmd := exec.Command("/bin/bash", "-c", s)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	logInfo("vgo: %s", out.String())
+	return nil
+}
+
+
+func unzip(archive, target string) error {
+	reader, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(target, fileMode); err != nil {
+		return err
+	}
+
+	for _, file := range reader.File {
+		f := func () error {
+			path := filepath.Join(target, file.Name)
+			if file.FileInfo().IsDir() {
+				os.MkdirAll(path, file.Mode())
+				return nil
+			}
+
+			fileReader, err := file.Open()
+			if err != nil {
+				return err
+			}
+			defer fileReader.Close()
+
+			targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+			if err != nil {
+				return err
+			}
+			defer targetFile.Close()
+
+			if _, err := io.Copy(targetFile, fileReader); err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		err := f()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+
+func zipDir(dir string, target string) error {
+	logInfo("vgo: change current dir %s", dir)
+	err := os.Chdir(dir)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	zipWriter := zip.NewWriter(f)
+	defer zipWriter.Close()
+	walk := func(curDir string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		src, err := os.Open(curDir)
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		h := &zip.FileHeader{Name: curDir, Method: zip.Deflate, Flags: 0x800}
+		destFile, err := zipWriter.CreateHeader(h)
+		if err != nil {
+			return err
+		}
+		io.Copy(destFile, src)
+		zipWriter.Flush()
+		return nil
+	}
+
+	return filepath.Walk(dir, walk)
+}
+
+
+func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *http.Request) {
+	fullPath := filepath.Join(vgoRoot, r.URL.Path)
+	originPath := filepath.Join(vgoRoot, originURL)
+	r.URL.Path = originURL
+	logInfo("vgo: download mod file: %s", originPath)
+	if pathExist(originPath) {
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	dir := filepath.Dir(originPath)
+	if !pathExist(dir) {
+		err := os.MkdirAll(dir, fileMode)
+		if err != nil {
+			write404Error("vgo: read mod file parent dir failed %s", w, err)
+			return
+		}
+	}
+
+	logInfo("vgo: create mod file: %s", originPath)
+	src, err := ioutil.ReadFile(fullPath)
+	if err != nil {
+		write404Error("vgo: read mod file failed %s", w, err)
+		return
+	}
+
+	k, v := p.findReplace(originURL)
+	newContent := bytes.Replace(src, []byte("module " + v), []byte("module " + k), -1)
+	err = ioutil.WriteFile(originPath, []byte(newContent), fileMode)
+	if err != nil {
+		write404Error("vgo: create mod file failed: %s", w, err)
 		return
 	}
 
@@ -232,6 +509,7 @@ func Serve(ip string, port string, cfg *Config) {
 	vgo.InitProxy(gopath)
 
 	vgoRoot = filepath.Join(gopath, vgoCacheDir)
+	vgoModRoot = filepath.Join(gopath, vgoModDir)
 	h := newProxyHandler(vgoRoot, cfg)
 	url := ip + ":" + port
 	logInfo("start vgo proxy server at %s", url)
