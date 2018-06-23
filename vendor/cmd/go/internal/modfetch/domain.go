@@ -24,11 +24,13 @@ type metaImport struct {
 	Prefix, VCS, RepoRoot string
 }
 
+var HTTPSites []string
+
 func isInsecure(path string) bool {
-	if strings.HasPrefix(path, "rnd-isource.huawei.com") ||
-		strings.HasPrefix(path, "rnd-github.huawei.com") ||
-		strings.HasPrefix(path, "code.huawei.com") {
-		return true
+	for _, h := range HTTPSites {
+		if strings.HasPrefix(path, h) {
+			return true
+		}
 	}
 
 	return false

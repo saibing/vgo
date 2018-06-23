@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"sort"
 	"sync"
+	"cmd/go/internal/modfetch"
 )
 
 const (
@@ -36,22 +37,27 @@ const (
 )
 
 type Config struct {
-	GoPath   string            `json:"gopath"`
-	HTTPSite []string          `json:"http"`
-	Replace  map[string]string `json:"replace"`
-	sortKeys []string
+	GoPath    string            `json:"gopath"`
+	HTTPSites []string          `json:"http"`
+	Replace   map[string]string `json:"replace"`
+	SortKeys  []string          `json:"sortKeys"`
 }
 
 func (cfg *Config) Init() {
 	for k := range cfg.Replace {
-		cfg.sortKeys = append(cfg.sortKeys, k)
+		cfg.SortKeys = append(cfg.SortKeys, k)
 	}
 
-	sort.Slice(cfg.sortKeys, func(i, j int) bool {
-		return len(cfg.sortKeys[i]) >= len(cfg.sortKeys[j])
+	sort.Slice(cfg.SortKeys, func(i, j int) bool {
+		return len(cfg.SortKeys[i]) >= len(cfg.SortKeys[j])
 	})
 
-	logInfo("sort keys: %v\n", cfg.sortKeys)
+	modfetch.HTTPSites = cfg.HTTPSites
+}
+
+func (cfg *Config) String() string {
+	data, _ := json.MarshalIndent(cfg, "", "   ")
+	return string(data)
 }
 
 var vgoRoot string
@@ -113,7 +119,7 @@ func (p *proxyHandler) replace(r *http.Request) bool {
 }
 
 func (p *proxyHandler) findReplace(url string) (string, string) {
-	for _, k := range p.cfg.sortKeys {
+	for _, k := range p.cfg.SortKeys {
 		if strings.HasPrefix(url, "/"+k) {
 			return k, p.cfg.Replace[k]
 		}
@@ -233,7 +239,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	key, value := p.findReplace(originURL)
 
 	targetNoExt := targetFileName[:len(targetFileName)-len(zipSuffix)]
-	sourceDir := filepath.Join(vgoModRoot, value + "@" + targetNoExt)
+	sourceDir := filepath.Join(vgoModRoot, value+"@"+targetNoExt)
 
 	keys := strings.Split(key, string(os.PathSeparator))
 	if len(keys) <= 1 {
@@ -242,7 +248,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 		return
 	}
 
-	copyTargetDir := filepath.Join(targetDir, key[:len(key) - len(keys[len(keys) - 1])])
+	copyTargetDir := filepath.Join(targetDir, key[:len(key)-len(keys[len(keys)-1])])
 	err := copyDir(sourceDir, copyTargetDir)
 	if err != nil {
 		removeDir(copyTargetDir)
@@ -317,7 +323,7 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 
 	fullPath := filepath.Join(vgoRoot, r.URL.Path)
 	originPath := filepath.Join(vgoRoot, originURL)
-	r.URL.Path = originURL 
+	r.URL.Path = originURL
 	logInfo("vgo: download mod file: %s", originPath)
 	if pathExist(originPath) {
 		logInfo("vgo: mod file %s already exist", originPath)
@@ -454,6 +460,7 @@ func Serve(ip string, port string, cfg *Config) {
 	vgoModRoot = filepath.Join(gopath, vgoModDir)
 	h := newProxyHandler(vgoRoot, cfg)
 	url := ip + ":" + port
+	logInfo("vgo config: \n%s", cfg)
 	logInfo("start vgo proxy server at %s", url)
 	err := http.ListenAndServe(url, h)
 	if err != nil {
