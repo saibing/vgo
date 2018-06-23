@@ -42,7 +42,6 @@ var (
 	importmap map[string]string
 	pkgdir    map[string]string
 	pkgmod    map[string]module.Version
-	isGetU    bool
 )
 
 func AddImports(gofiles []string) {
@@ -170,7 +169,7 @@ func Lookup(parentPath, path string) (dir, realPath string, err error) {
 func iterate(doImports func(*loader)) {
 	var err error
 	mvsOp := mvs.BuildList
-	if isGetU {
+	if *getU {
 		mvsOp = mvs.UpgradeAll
 	}
 	buildList, err = mvsOp(Target, newReqs())
@@ -300,8 +299,7 @@ func (ld *loader) importDir(path string) string {
 		return dir
 	}
 
-	i := strings.Index(path, "/")
-	if i < 0 || !strings.Contains(path[:i], ".") {
+	if search.IsStandardImportPath(path) {
 		if strings.HasPrefix(path, "golang_org/") {
 			return filepath.Join(cfg.GOROOT, "src/vendor", path)
 		}
@@ -403,6 +401,8 @@ func findMissing(m missing) {
 	modFile.AddRequire(root, info.Version)
 }
 
+// mvsReqs implements mvs.Reqs for vgo's semantic versions, with any exclusions
+// or replacements applied internally.
 type mvsReqs struct {
 	extra []module.Version
 	cache par.Cache
@@ -413,6 +413,11 @@ func newReqs(extra ...module.Version) *mvsReqs {
 		extra: extra,
 	}
 	return r
+}
+
+// Reqs returns the module requirement graph.
+func Reqs() mvs.Reqs {
+	return newReqs()
 }
 
 func (r *mvsReqs) Required(mod module.Version) ([]module.Version, error) {
@@ -438,7 +443,7 @@ func (r *mvsReqs) Required(mod module.Version) ([]module.Version, error) {
 				if err != nil {
 					return cached{nil, err}
 				}
-				if mv1.Version == "" {
+				if mv1.Version == "none" {
 					return cached{nil, fmt.Errorf("%s(%s) depends on excluded %s(%s) with no newer version available", mod.Path, mod.Version, mv.Path, mv.Version)}
 				}
 				mv = mv1
@@ -532,12 +537,14 @@ func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 }
 
 func (*mvsReqs) Max(v1, v2 string) string {
-	if semver.Compare(v1, v2) == -1 {
+	if v1 != "" && semver.Compare(v1, v2) == -1 {
 		return v2
 	}
 	return v1
 }
 
+// Latest returns the latest tagged version of the module at path,
+// or the latest untagged version if no version is tagged.
 func (*mvsReqs) Latest(path string) (module.Version, error) {
 	// Note that query "latest" is not the same as
 	// using repo.Latest.
@@ -563,6 +570,8 @@ func versions(path string) ([]string, error) {
 	return repo.Versions("")
 }
 
+// Previous returns the tagged version of m.Path immediately prior to
+// m.Version, or version "none" if no prior version is tagged.
 func (*mvsReqs) Previous(m module.Version) (module.Version, error) {
 	list, err := versions(m.Path)
 	if err != nil {

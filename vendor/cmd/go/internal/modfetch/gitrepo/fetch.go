@@ -8,7 +8,6 @@ package gitrepo
 import (
 	"archive/zip"
 	"bytes"
-	"cmd/go/internal/modfetch/codehost"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"cmd/go/internal/modfetch/codehost"
+	"cmd/go/internal/par"
 )
 
 // Repo returns the code repository at the given Git remote reference.
@@ -35,6 +37,27 @@ func LocalRepo(remote, root string) (codehost.Repo, error) {
 }
 
 const workDirType = "git2"
+
+var repoCache par.Cache
+
+func newRepoCached(remote, root string, localOK bool) (codehost.Repo, error) {
+	type key struct {
+		remote  string
+		root    string
+		localOK bool
+	}
+	type cached struct {
+		repo codehost.Repo
+		err  error
+	}
+
+	c := repoCache.Do(key{remote, root, localOK}, func() interface{} {
+		repo, err := newRepo(remote, root, localOK)
+		return cached{repo, err}
+	}).(cached)
+
+	return c.repo, c.err
+}
 
 func newRepo(remote, root string, localOK bool) (codehost.Repo, error) {
 	r := &repo{remote: remote, root: root, canArchive: true}
@@ -85,10 +108,12 @@ func newRepo(remote, root string, localOK bool) (codehost.Repo, error) {
 }
 
 type repo struct {
-	remote     string
-	local      bool
-	root       string
-	dir        string
+	remote string
+	local  bool
+	root   string
+	dir    string
+
+	mu         sync.Mutex // protects canArchive, some git repo state
 	canArchive bool
 
 	refsOnce sync.Once
@@ -270,6 +295,15 @@ func (r *repo) statOrArchive(rev string, archiveArgs ...string) (info *codehost.
 		return nil, nil, fmt.Errorf("unknown revision %q", rev)
 	}
 
+	// Protect r.canArchive.
+	//
+	// Also protects against multiple goroutines running through the
+	// "progressively fetch more and more" sequence at the same time.
+	// TODO(rsc): Add codehost.LockDir and use it for protecting that
+	// sequence, so that multiple processes don't collide.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.canArchive {
 		// git archive with --remote requires a ref, not a hash.
 		// Proceed only if we know a ref for this hash.
@@ -279,7 +313,7 @@ func (r *repo) statOrArchive(rev string, archiveArgs ...string) (info *codehost.
 				return &codehost.RevInfo{Version: rev}, out, nil
 			}
 			if bytes.Contains(err.(*codehost.RunError).Stderr, []byte("did not match any files")) {
-				return nil, nil, fmt.Errorf("file not found")
+				return nil, nil, os.ErrNotExist
 			}
 			if bytes.Contains(err.(*codehost.RunError).Stderr, []byte("Operation not supported by protocol")) {
 				r.canArchive = false
@@ -422,7 +456,7 @@ func (r *repo) ReadFile(rev, file string, maxSize int64) ([]byte, error) {
 	}
 	out, err := codehost.Run(r.dir, "git", "cat-file", "blob", info.Name+":"+file)
 	if err != nil {
-		return nil, fmt.Errorf("file not found")
+		return nil, os.ErrNotExist
 	}
 	return out, nil
 }
@@ -441,7 +475,7 @@ func (r *repo) ReadZip(rev, subdir string, maxSize int64) (zip io.ReadCloser, ac
 		archive, err = codehost.Run(r.dir, "git", "archive", "--format=zip", "--prefix=prefix/", info.Name, args)
 		if err != nil {
 			if bytes.Contains(err.(*codehost.RunError).Stderr, []byte("did not match any files")) {
-				return nil, "", fmt.Errorf("file not found")
+				return nil, "", os.ErrNotExist
 			}
 			return nil, "", err
 		}

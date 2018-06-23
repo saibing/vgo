@@ -32,6 +32,7 @@ const (
 // A Repo represents a code hosting source.
 // Typical implementations include local version control repositories,
 // remote version control servers, and code hosting sites.
+// A Repo must be safe for simultaneous use by multiple goroutines.
 type Repo interface {
 	// Root returns the import path of the root directory of the repository.
 	Root() string
@@ -50,6 +51,9 @@ type Repo interface {
 
 	// ReadFile reads the given file in the file tree corresponding to revision rev.
 	// It should refuse to read more than maxSize bytes.
+	//
+	// If the requested file does not exist it should return an error for which
+	// os.IsNotExist(err) returns true.
 	ReadFile(rev, file string, maxSize int64) (data []byte, err error)
 
 	// ReadZip downloads a zip file for the subdir subdirectory

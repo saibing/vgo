@@ -121,13 +121,13 @@ func TestModEdit(t *testing.T) {
 
 	tg.run("-vgo", "mod",
 		"-droprequire=x.1",
-		"-addrequire=x.1@v1.0.0",
-		"-addrequire=x.2@v1.1.0",
+		"-require=x.1@v1.0.0",
+		"-require=x.2@v1.1.0",
 		"-droprequire=x.2",
-		"-addexclude=x.1 @ v1.2.0",
-		"-addexclude=x.1@v1.2.1",
-		"-addreplace=x.1@v1.3.0=>y.1@v1.4.0",
-		"-addreplace=x.1@v1.4.0 => ../z",
+		"-exclude=x.1 @ v1.2.0",
+		"-exclude=x.1@v1.2.1",
+		"-replace=x.1@v1.3.0=>y.1@v1.4.0",
+		"-replace=x.1@v1.4.0 => ../z",
 	)
 	mustHaveGoMod(`module x.x/y/z
 
@@ -148,7 +148,7 @@ replace (
 		"-droprequire=x.1",
 		"-dropexclude=x.1@v1.2.1",
 		"-dropreplace=x.1@v1.3.0",
-		"-addrequire=x.3@v1.99.0",
+		"-require=x.3@v1.99.0",
 	)
 	mustHaveGoMod(`module x.x/y/z
 
@@ -565,6 +565,42 @@ func TestQueryExcluded(t *testing.T) {
 	tg.grepStderr("github.com/gorilla/mux@v1.6.0 excluded", "print version excluded")
 }
 
+func TestRequireExcluded(t *testing.T) {
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x; import _ "github.com/gorilla/mux"`), 0666))
+
+	tg.setenv(homeEnvName(), tg.path("home"))
+	tg.cd(tg.path("x"))
+
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+		exclude github.com/gorilla/mux latest
+		require github.com/gorilla/mux latest
+	`), 0666))
+	tg.runFail("-vgo", "build")
+	tg.grepStderr("no newer version available", "only available version excluded")
+
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+		exclude github.com/gorilla/mux v1.6.1
+		require github.com/gorilla/mux v1.6.1
+	`), 0666))
+	tg.run("-vgo", "build")
+	tg.grepStderr("github.com/gorilla/mux v1.6.2", "find version 1.6.2")
+
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+		exclude github.com/gorilla/mux v1.6.2
+		require github.com/gorilla/mux v1.6.1
+	`), 0666))
+	tg.run("-vgo", "build")
+	tg.grepStderr("github.com/gorilla/mux v1.6.1", "find version 1.6.1")
+}
+
 func TestConvertLegacyConfig(t *testing.T) {
 	testenv.MustHaveExternalNetwork(t)
 	tg := testgo(t)
@@ -623,4 +659,30 @@ func TestVendorWithoutDeps(t *testing.T) {
 	tg.cd(tg.path("x"))
 	tg.run("-vgo", "mod", "-vendor")
 	tg.grepStderr("vgo: no dependencies to vendor", "print vendor info")
+}
+
+func TestVersionWithoutModule(t *testing.T) {
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.cd(tg.path("."))
+	tg.run("-vgo", "version")
+}
+
+func TestImportDir(t *testing.T) {
+	testenv.MustHaveExternalNetwork(t)
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.setenv("GOPATH", tg.path("."))
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/main.go"), []byte(`
+		package x
+		import _ "goji.io"`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte("module x"), 0666))
+	tg.must(os.MkdirAll(filepath.Join(runtime.GOROOT(), "src", "goji.io"), 0777))
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "build")
 }
