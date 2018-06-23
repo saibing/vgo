@@ -67,13 +67,18 @@ func newProxyHandler(rootDir string, cfg *Config) http.Handler {
 	return proxy
 }
 
+var allMutex sync.Mutex
 var modMutex sync.Mutex
 var zipMutex sync.Mutex
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	//allMutex.Lock()
+	//defer allMutex.Unlock()
+
 	originURL := r.URL.Path
 	replaced := p.replace(r)
+
 	url := r.URL.Path
 
 	logRequest(fmt.Sprintf("GET %s from %s", url, r.RemoteAddr))
@@ -203,15 +208,17 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *http.Request) {
 	zipMutex.Lock()
 	defer zipMutex.Unlock()
-	
+
 	originPath := filepath.Join(vgoRoot, originURL)
 	r.URL.Path = originURL
 	logInfo("vgo: download zip file: %s", originPath)
 	if pathExist(originPath) {
+		logInfo("vgo: zip file %s already exist", originPath)
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
 
+	logInfo("vgo: zip file %s does not exist", originPath)
 	targetDir := filepath.Dir(originPath)
 	if !pathExist(targetDir) {
 		logInfo("vgo: mkdir %s", targetDir)
@@ -223,25 +230,35 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	}
 
 	targetFileName := filepath.Base(originPath)
-
 	key, value := p.findReplace(originURL)
-	sourceDir := filepath.Join(vgoModRoot, value+"@"+targetFileName[:len(targetFileName)-len(zipSuffix)])
-	copyTargetDir := filepath.Join(targetDir, key)
-	err := copyDir(sourceDir, copyTargetDir)
-	if err != nil {
-		removeDir(copyTargetDir)
-		write404Error("vgo: move file failed: %s", w, err)
+
+	targetNoExt := targetFileName[:len(targetFileName)-len(zipSuffix)]
+	sourceDir := filepath.Join(vgoModRoot, value + "@" + targetNoExt)
+
+	keys := strings.Split(key, string(os.PathSeparator))
+	if len(keys) <= 1 {
+		err := fmt.Errorf("invalid module path %s", key)
+		write404Error("vgo: copy file failed: %s", w, err)
 		return
 	}
 
-	err = zipDir(targetDir, copyTargetDir, targetFileName)
+	copyTargetDir := filepath.Join(targetDir, key[:len(key) - len(keys[len(keys) - 1])])
+	err := copyDir(sourceDir, copyTargetDir)
+	if err != nil {
+		removeDir(copyTargetDir)
+		write404Error("vgo: copy file failed: %s", w, err)
+		return
+	}
+
+	zipSourceDir := key + "@" + targetNoExt
+	err = zipDir(targetDir, zipSourceDir, targetFileName)
 	if err != nil {
 		removeFile(filepath.Join(targetDir, targetFileName))
 		write404Error("vgo: zip file failed: %s", w, err)
 		return
 	}
 
-	removeDir(filepath.Join(targetDir, strings.Split(key, string(os.PathSeparator))[0]))
+	removeDir(filepath.Join(targetDir, keys[0]))
 
 	p.fileHandler.ServeHTTP(w, r)
 }
@@ -264,14 +281,14 @@ func copyDir(source string, target string) error {
 	if pathExist(target) {
 		return nil
 	}
-	
+
 	logInfo("vgo: mkdir %s", target)
 	err := os.MkdirAll(target, fileMode)
 	if err != nil {
 		return err
 	}
 
-	shell := fmt.Sprintf("cp -r %s/* %s", source, target)
+	shell := fmt.Sprintf("cp -r %s %s", source, target)
 	return execShell(shell)
 }
 
@@ -289,20 +306,21 @@ func execShell(s string) error {
 	return nil
 }
 
-func zipDir(workDir string, zipDir string, target string) error {
-	shell := fmt.Sprintf("cd %s; zip -r %s %s", workDir, target, zipDir)
+func zipDir(workDir string, zipSourceDir string, target string) error {
+	shell := fmt.Sprintf("cd %s; zip -r %s %s", workDir, target, zipSourceDir)
 	return execShell(shell)
 }
 
 func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *http.Request) {
 	modMutex.Lock()
 	defer modMutex.Unlock()
-	
+
 	fullPath := filepath.Join(vgoRoot, r.URL.Path)
 	originPath := filepath.Join(vgoRoot, originURL)
-	r.URL.Path = originURL
+	r.URL.Path = originURL 
 	logInfo("vgo: download mod file: %s", originPath)
 	if pathExist(originPath) {
+		logInfo("vgo: mod file %s already exist", originPath)
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
