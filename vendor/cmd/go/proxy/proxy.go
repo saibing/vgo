@@ -7,15 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"cmd/go/internal/module"
-		"encoding/json"
-	"io/ioutil"
 	"bytes"
-	"sort"
-	"io"
-	"archive/zip"
-	"os/exec"
+	"cmd/go/internal/module"
 	"cmd/go/internal/vgo"
+	"encoding/json"
+	"io/ioutil"
+	"os/exec"
+	"sort"
 	"sync"
 )
 
@@ -23,7 +21,7 @@ const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
 	vgoCacheDir = "src/mod/cache/"
-	vgoModDir = "src/mod"
+	vgoModDir   = "src/mod"
 )
 
 const (
@@ -38,9 +36,9 @@ const (
 )
 
 type Config struct {
-	GoPath string `json:"gopath"`
-	HTTPSite []string `json:"httpSite"`
-	Replace map[string]string `json:"replace"`
+	GoPath   string            `json:"gopath"`
+	HTTPSite []string          `json:"httpSite"`
+	Replace  map[string]string `json:"replace"`
 	sortKeys []string
 }
 
@@ -49,7 +47,7 @@ func (cfg *Config) Init() {
 		cfg.sortKeys = append(cfg.sortKeys, k)
 	}
 
-	sort.Slice(cfg.sortKeys, func(i, j int) bool{
+	sort.Slice(cfg.sortKeys, func(i, j int) bool {
 		return len(cfg.sortKeys[i]) >= len(cfg.sortKeys[j])
 	})
 
@@ -60,23 +58,20 @@ var vgoRoot string
 var vgoModRoot string
 
 type proxyHandler struct {
-	cfg *Config
+	cfg         *Config
 	fileHandler http.Handler
 }
 
 func newProxyHandler(rootDir string, cfg *Config) http.Handler {
-	proxy := &proxyHandler{cfg: cfg, fileHandler:http.FileServer(http.Dir(rootDir))}
+	proxy := &proxyHandler{cfg: cfg, fileHandler: http.FileServer(http.Dir(rootDir))}
 	return proxy
 }
 
-var mutex sync.Mutex
+var modMutex sync.Mutex
+var zipMutex sync.Mutex
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	originURL := r.URL.Path
 	replaced := p.replace(r)
 	url := r.URL.Path
@@ -187,7 +182,7 @@ func write404Error(format string, w http.ResponseWriter, err error) {
 func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
 
-	if  originURL == url {
+	if originURL == url {
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
@@ -206,6 +201,9 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 }
 
 func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *http.Request) {
+	zipMutex.Lock()
+	defer zipMutex.Unlock()
+	
 	originPath := filepath.Join(vgoRoot, originURL)
 	r.URL.Path = originURL
 	logInfo("vgo: download zip file: %s", originPath)
@@ -226,19 +224,12 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 
 	targetFileName := filepath.Base(originPath)
 
-	//logInfo("vgo: unzip file %s to %s", fullPath, targetDir)
-	//err := unzip(fullPath, targetDir)
-	//if err != nil {
-	//	write404Error("vgo: unzip file failed %s", w, err)
-	//	return
-	//}
-
-
-
 	key, value := p.findReplace(originURL)
-	sourceDir := filepath.Join(vgoModRoot, value + "@" + targetFileName[:len(targetFileName) - len(zipSuffix)])
-	err := copyDir(sourceDir, filepath.Join(targetDir, key))
+	sourceDir := filepath.Join(vgoModRoot, value+"@"+targetFileName[:len(targetFileName)-len(zipSuffix)])
+	copyTargetDir := filepath.Join(targetDir, key)
+	err := copyDir(sourceDir, copyTargetDir)
 	if err != nil {
+		removeDir(copyTargetDir)
 		write404Error("vgo: move file failed: %s", w, err)
 		return
 	}
@@ -263,8 +254,11 @@ func removeDir(dir string) error {
 	return os.RemoveAll(dir)
 }
 
-
 func copyDir(source string, target string) error {
+	if pathExist(target) {
+		return nil
+	}
+	
 	logInfo("vgo: mkdir %s", target)
 	err := os.MkdirAll(target, fileMode)
 	if err != nil {
@@ -289,97 +283,15 @@ func execShell(s string) error {
 	return nil
 }
 
-
-func unzip(archive, target string) error {
-	reader, err := zip.OpenReader(archive)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(target, fileMode); err != nil {
-		return err
-	}
-
-	for _, file := range reader.File {
-		f := func () error {
-			path := filepath.Join(target, file.Name)
-			if file.FileInfo().IsDir() {
-				os.MkdirAll(path, file.Mode())
-				return nil
-			}
-
-			fileReader, err := file.Open()
-			if err != nil {
-				return err
-			}
-			defer fileReader.Close()
-
-			targetFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
-			if err != nil {
-				return err
-			}
-			defer targetFile.Close()
-
-			if _, err := io.Copy(targetFile, fileReader); err != nil {
-				return err
-			}
-
-			return nil
-		}
-
-		err := f()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-
 func zipDir(dir string, target string) error {
-	logInfo("vgo: change current dir %s", dir)
-	err := os.Chdir(dir)
-	if err != nil {
-		return err
-	}
-	f, err := os.Create(target)
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
-	zipWriter := zip.NewWriter(f)
-	defer zipWriter.Close()
-	walk := func(curDir string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Println(err)
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		src, err := os.Open(curDir)
-		if err != nil {
-			return err
-		}
-		defer src.Close()
-
-		h := &zip.FileHeader{Name: curDir, Method: zip.Deflate, Flags: 0x800}
-		destFile, err := zipWriter.CreateHeader(h)
-		if err != nil {
-			return err
-		}
-		io.Copy(destFile, src)
-		zipWriter.Flush()
-		return nil
-	}
-
-	return filepath.Walk(dir, walk)
+	shell := fmt.Sprintf("cd %s; zip -r %s %s", dir, target, dir)
+	return execShell(shell)
 }
-
 
 func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *http.Request) {
+	modMutex.Lock()
+	defer modMutex.Unlock()
+	
 	fullPath := filepath.Join(vgoRoot, r.URL.Path)
 	originPath := filepath.Join(vgoRoot, originURL)
 	r.URL.Path = originURL
@@ -406,7 +318,7 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	}
 
 	k, v := p.findReplace(originURL)
-	newContent := bytes.Replace(src, []byte("module " + v), []byte("module " + k), -1)
+	newContent := bytes.Replace(src, []byte("module "+v), []byte("module "+k), -1)
 	err = ioutil.WriteFile(originPath, []byte(newContent), fileMode)
 	if err != nil {
 		write404Error("vgo: create mod file failed: %s", w, err)

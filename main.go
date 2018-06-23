@@ -29,6 +29,10 @@ import (
 	"cmd/go/proxy"
 	"fmt"
 	"os"
+
+	_ "net/http/pprof"
+	"log"
+	"net/http"
 )
 
 const (
@@ -66,6 +70,10 @@ func main() {
 	}
 
 	cfg.Init()
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	proxy.Serve(cmd.IP, cmd.Port, cfg)
 }
