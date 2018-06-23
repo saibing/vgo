@@ -234,8 +234,9 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 		return
 	}
 
-	err = zipDir(targetDir, targetFileName)
+	err = zipDir(targetDir, copyTargetDir, targetFileName)
 	if err != nil {
+		removeFile(filepath.Join(targetDir, targetFileName))
 		write404Error("vgo: zip file failed: %s", w, err)
 		return
 	}
@@ -252,6 +253,11 @@ const (
 func removeDir(dir string) error {
 	logInfo("vgo: remove dir %s", dir)
 	return os.RemoveAll(dir)
+}
+
+func removeFile(filePath string) error {
+	logInfo("vgo: remove file %s", filePath)
+	return os.Remove(filePath)
 }
 
 func copyDir(source string, target string) error {
@@ -283,8 +289,8 @@ func execShell(s string) error {
 	return nil
 }
 
-func zipDir(dir string, target string) error {
-	shell := fmt.Sprintf("cd %s; zip -r %s %s", dir, target, dir)
+func zipDir(workDir string, zipDir string, target string) error {
+	shell := fmt.Sprintf("cd %s; zip -r %s %s", workDir, target, zipDir)
 	return execShell(shell)
 }
 
