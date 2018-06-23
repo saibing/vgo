@@ -33,6 +33,8 @@ import (
 	_ "net/http/pprof"
 	"log"
 	"net/http"
+	"io/ioutil"
+	"encoding/json"
 )
 
 const (
@@ -40,7 +42,7 @@ const (
 )
 
 func main() {
-	// vgoproxy不需要设置GOPROXY了，避免陷入无限递归的陷阱
+	// vgo proxy不需要设置GOPROXY了，避免陷入无限递归的陷阱
 	err := os.Setenv(goproxyEnv, "")
 	if err != nil {
 		fmt.Printf("reset envirnoment variable %s failed: %v\n", goproxyEnv, err)
@@ -57,16 +59,23 @@ func main() {
 		return
 	}
 
-	cfg := &proxy.Config{
-		GoPath:"/home/bingo/.gomod",
-		HTTPSite:[]string {"code.huawei.com", "rnd-isource.huawei.com", "rnd-github.huawei.com"},
-		Replace:map[string]string{
-			"golang.org/x/text": "github.com/golang/text",
-			"golang.org/x/net": "github.com/golang/net",
-			"golang.org/x/tools": "github.com/golang/tools",
-			"golang.org/x": "github.com/golang",
-			"golang.org": "github.com",
-		},
+	if cmd.Config == "" {
+		printUsage()
+		return
+	}
+
+	data, err := ioutil.ReadFile(cmd.Config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return
+	}
+
+	cfg := &proxy.Config{}
+
+	err = json.Unmarshal(data, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return
 	}
 
 	cfg.Init()

@@ -15,6 +15,7 @@ type Cmd struct {
 	VersionFlag bool
 	IP          string
 	Port        string
+	Config      string
 	Args        []string
 }
 
@@ -27,6 +28,7 @@ func parseCmd() *Cmd {
 	flag.BoolVar(&cmd.VersionFlag, "version", false, "print version and exit")
 	flag.StringVar(&cmd.IP, "ip", "", "the listen ip address")
 	flag.StringVar(&cmd.Port, "port", "9090", "the listen port")
+	flag.StringVar(&cmd.Config, "config", "./vgo.json", "the vgo proxy config file")
 
 	flag.Parse()
 
@@ -37,7 +39,7 @@ func parseCmd() *Cmd {
 
 // printUsage print bingo usage
 func printUsage() {
-	fmt.Println("Usage: vgoproxy --ip <ip> --port <port>")
+	fmt.Println("Usage: vgo --ip <ip> --port <port> --config <config file path>")
 }
 
 // printVersion print bingo version

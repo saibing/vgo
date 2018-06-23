@@ -1,0 +1,15 @@
+{
+  "gopath": "/home/bingo/.gomod",
+  "http": [
+    "code.huawei.com",
+    "rnd-isource.huawei.com",
+    "rnd-github.huawei.com"
+  ],
+  "replace": {
+    "golang.org/x/text": "github.com/golang/text",
+    "golang.org/x/net": "github.com/golang/net",
+    "golang.org/x/tools": "github.com/golang/tools",
+    "golang.org/x": "github.com/golang",
+    "golang.org": "github.com"
+  }
+}

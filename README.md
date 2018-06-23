@@ -8,7 +8,6 @@ gopkg.in
 golang.org
 ...
 ```
-`
 
 ## 服务端安装部署
 
@@ -18,7 +17,27 @@ $ vgo
 start vgo proxy server at http://127.0.0.1:9090
 ```
 
-vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在vgo代码的基础增加了proxy功能, 所以vgoproxy下载与管理包的原理与要求与vgo程序相同:
+### 配置vgo.json
+
+```json
+{
+  "gopath": "/home/bingo/.gomod",
+  "http": [
+    "code.huawei.com",
+    "rnd-isource.huawei.com",
+    "rnd-github.huawei.com"
+  ],
+  "replace": {
+    "golang.org/x/text": "github.com/golang/text",
+    "golang.org/x/net": "github.com/golang/net",
+    "golang.org/x/tools": "github.com/golang/tools",
+    "golang.org/x": "github.com/golang",
+    "golang.org": "github.com"
+  }
+}
+```
+
+vgoproxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，在vgo代码的基础增加了proxy功能, 所以vgo proxy下载与管理包的原理与要求与vgo程序相同:
 
 
 ## 客户端配置

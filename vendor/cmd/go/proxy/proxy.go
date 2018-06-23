@@ -37,7 +37,7 @@ const (
 
 type Config struct {
 	GoPath   string            `json:"gopath"`
-	HTTPSite []string          `json:"httpSite"`
+	HTTPSite []string          `json:"http"`
 	Replace  map[string]string `json:"replace"`
 	sortKeys []string
 }
