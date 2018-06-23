@@ -57,6 +57,7 @@ func main() {
 		GoPath:"/home/bingo/.gomod",
 		HTTPSite:[]string {"code.huawei.com", "rnd-isource.huawei.com", "rnd-github.huawei.com"},
 		Replace:map[string]string{
+			"golang.org/x/text": "github.com/golang/text",
 			"golang.org/x/net": "github.com/golang/net",
 			"golang.org/x/tools": "github.com/golang/tools",
 			"golang.org/x": "github.com/golang",

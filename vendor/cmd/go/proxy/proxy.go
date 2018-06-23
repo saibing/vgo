@@ -16,6 +16,7 @@ import (
 	"archive/zip"
 	"os/exec"
 	"cmd/go/internal/vgo"
+	"sync"
 )
 
 const (
@@ -68,8 +69,13 @@ func newProxyHandler(rootDir string, cfg *Config) http.Handler {
 	return proxy
 }
 
+var mutex sync.Mutex
+
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	originURL := r.URL.Path
 	replaced := p.replace(r)
