@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"bytes"
+	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
 	"cmd/go/internal/vgo"
 	"encoding/json"
@@ -15,13 +16,13 @@ import (
 	"os/exec"
 	"sort"
 	"sync"
-	"cmd/go/internal/modfetch"
 )
 
 const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
 	vgoCacheDir = "src/mod/cache/"
+	webRoot     = "src/mod/cache/download/"
 	vgoModDir   = "src/mod"
 )
 
@@ -60,7 +61,7 @@ func (cfg *Config) String() string {
 	return string(data)
 }
 
-var vgoRoot string
+var fullWebRoot string
 var vgoModRoot string
 
 type proxyHandler struct {
@@ -79,8 +80,8 @@ var zipMutex sync.Mutex
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//allMutex.Lock()
-	//defer allMutex.Unlock()
+	allMutex.Lock()
+	defer allMutex.Unlock()
 
 	originURL := r.URL.Path
 	replaced := p.replace(r)
@@ -157,7 +158,7 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 
 func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
-	fullPath := filepath.Join(vgoRoot, url)
+	fullPath := filepath.Join(fullWebRoot, url)
 	if pathExist(fullPath) {
 		p.downloadFile(originURL, w, r)
 		return
@@ -215,7 +216,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	zipMutex.Lock()
 	defer zipMutex.Unlock()
 
-	originPath := filepath.Join(vgoRoot, originURL)
+	originPath := filepath.Join(fullWebRoot, originURL)
 	r.URL.Path = originURL
 	logInfo("vgo: download zip file: %s", originPath)
 	if pathExist(originPath) {
@@ -321,8 +322,8 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	modMutex.Lock()
 	defer modMutex.Unlock()
 
-	fullPath := filepath.Join(vgoRoot, r.URL.Path)
-	originPath := filepath.Join(vgoRoot, originURL)
+	fullPath := filepath.Join(fullWebRoot, r.URL.Path)
+	originPath := filepath.Join(fullWebRoot, originURL)
 	r.URL.Path = originURL
 	logInfo("vgo: download mod file: %s", originPath)
 	if pathExist(originPath) {
@@ -457,9 +458,9 @@ func Serve(ip string, port string, cfg *Config) {
 	vgo.InitProxy(gopath)
 	modfetch.HTTPSites = cfg.HTTPSites
 
-	vgoRoot = filepath.Join(gopath, vgoCacheDir)
+	fullWebRoot = filepath.Join(gopath, webRoot)
 	vgoModRoot = filepath.Join(gopath, vgoModDir)
-	h := newProxyHandler(vgoRoot, cfg)
+	h := newProxyHandler(fullWebRoot, cfg)
 	url := ip + ":" + port
 	logInfo("vgo config: \n%s", cfg)
 	logInfo("start vgo proxy server at %s", url)
