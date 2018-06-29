@@ -17,7 +17,6 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/imports"
-	"cmd/go/internal/modconv"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modfile"
 	"cmd/go/internal/module"
@@ -272,6 +271,11 @@ func (ld *loader) importPkg(path string, level importLevel) {
 
 	imports, testImports, err := scanDir(dir, ld.tags)
 	if err != nil {
+		if strings.HasPrefix(err.Error(), "no Go ") {
+			// Don't print about directories with no Go source files.
+			// Let the eventual real package load do that.
+			return
+		}
 		base.Errorf("vgo: %s [%s]: %v", ld.stackText(), dir, err)
 		return
 	}
@@ -346,7 +350,7 @@ func (ld *loader) importDir(path string) string {
 	return ""
 }
 
-// Replacement the replacement for mod, if any, from go.mod.
+// Replacement returns the replacement for mod, if any, from go.mod.
 // If there is no replacement for mod, Replacement returns
 // a module.Version with Path == "".
 func Replacement(mod module.Version) module.Version {
@@ -456,8 +460,6 @@ func (r *mvsReqs) Required(mod module.Version) ([]module.Version, error) {
 
 	return c.list, c.err
 }
-
-var vgoVersion = []byte(modconv.Prefix)
 
 func (r *mvsReqs) required(mod module.Version) ([]module.Version, error) {
 	if mod == Target {
@@ -625,4 +627,19 @@ func scanDir(path string, tags map[string]bool) (imports_, testImports []string,
 	}
 
 	return filter(imports_), filter(testImports), err
+}
+
+func fetch(mod module.Version) (dir string, err error) {
+	if r := Replacement(mod); r.Path != "" {
+		if r.Version == "" {
+			dir = r.Path
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(ModRoot, dir)
+			}
+			return dir, nil
+		}
+		mod = r
+	}
+
+	return modfetch.Download(mod)
 }

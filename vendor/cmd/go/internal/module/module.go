@@ -8,6 +8,7 @@ package module
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -199,4 +200,31 @@ func MatchPathMajor(v, pathMajor string) bool {
 		return m == "v0" || m == "v1"
 	}
 	return (pathMajor[0] == '/' || pathMajor[0] == '.') && m == pathMajor[1:]
+}
+
+// Sort sorts the list by Path, breaking ties by comparing Versions.
+func Sort(list []Version) {
+	sort.Slice(list, func(i, j int) bool {
+		mi := list[i]
+		mj := list[j]
+		if mi.Path != mj.Path {
+			return mi.Path < mj.Path
+		}
+		// To help go.sum formatting, allow version/file.
+		// Compare semver prefix by semver rules,
+		// file by string order.
+		vi := mi.Version
+		vj := mj.Version
+		var fi, fj string
+		if k := strings.Index(vi, "/"); k >= 0 {
+			vi, fi = vi[:k], vi[k:]
+		}
+		if k := strings.Index(vj, "/"); k >= 0 {
+			vj, fj = vj[:k], vj[k:]
+		}
+		if vi != vj {
+			return semver.Compare(vi, vj) < 0
+		}
+		return fi < fj
+	})
 }

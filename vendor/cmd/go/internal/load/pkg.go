@@ -50,21 +50,22 @@ type PackagePublic struct {
 	// Note: These fields are part of the go command's public API.
 	// See list.go. It is okay to add fields, but not to change or
 	// remove existing ones. Keep in sync with list.go
-	Dir           string `json:",omitempty"` // directory containing package sources
-	ImportPath    string `json:",omitempty"` // import path of package in dir
-	ImportComment string `json:",omitempty"` // path in import comment on package statement
-	Name          string `json:",omitempty"` // package name
-	Doc           string `json:",omitempty"` // package documentation string
-	Target        string `json:",omitempty"` // installed target for this package (may be executable)
-	Shlib         string `json:",omitempty"` // the shared library that contains this package (only set when -linkshared)
-	Goroot        bool   `json:",omitempty"` // is this package found in the Go root?
-	Standard      bool   `json:",omitempty"` // is this package part of the standard Go library?
-	Root          string `json:",omitempty"` // Go root or Go path dir containing this package
-	ConflictDir   string `json:",omitempty"` // Dir is hidden by this other directory
-	BinaryOnly    bool   `json:",omitempty"` // package cannot be recompiled
-	ForTest       string `json:",omitempty"` // package is only for use in named test
-	DepOnly       bool   `json:",omitempty"` // package is only as a dependency, not explicitly listed
-	Export        string `json:",omitempty"` // file containing export data (set by go list -export)
+	Dir           string                `json:",omitempty"` // directory containing package sources
+	ImportPath    string                `json:",omitempty"` // import path of package in dir
+	ImportComment string                `json:",omitempty"` // path in import comment on package statement
+	Name          string                `json:",omitempty"` // package name
+	Doc           string                `json:",omitempty"` // package documentation string
+	Target        string                `json:",omitempty"` // installed target for this package (may be executable)
+	Shlib         string                `json:",omitempty"` // the shared library that contains this package (only set when -linkshared)
+	Goroot        bool                  `json:",omitempty"` // is this package found in the Go root?
+	Standard      bool                  `json:",omitempty"` // is this package part of the standard Go library?
+	Root          string                `json:",omitempty"` // Go root or Go path dir containing this package
+	ConflictDir   string                `json:",omitempty"` // Dir is hidden by this other directory
+	BinaryOnly    bool                  `json:",omitempty"` // package cannot be recompiled
+	ForTest       string                `json:",omitempty"` // package is only for use in named test
+	DepOnly       bool                  `json:",omitempty"` // package is only as a dependency, not explicitly listed
+	Export        string                `json:",omitempty"` // file containing export data (set by go list -export)
+	Module        *modinfo.ModulePublic `json:",omitempty"` // info about package's module, if any
 
 	// Stale and StaleReason remain here *only* for the list command.
 	// They are only initialized in preparation for list execution.
@@ -112,8 +113,6 @@ type PackagePublic struct {
 	TestImports  []string `json:",omitempty"` // imports from TestGoFiles
 	XTestGoFiles []string `json:",omitempty"` // _test.go files outside package
 	XTestImports []string `json:",omitempty"` // imports from XTestGoFiles
-
-	Module *modinfo.ModulePublic `json:",omitempty"` // info about package module
 }
 
 // AllFiles returns the names of all the files considered for the package.
@@ -150,21 +149,22 @@ func (p *Package) Desc() string {
 
 type PackageInternal struct {
 	// Unexported fields are not part of the public API.
-	Build        *build.Package
-	Imports      []*Package           // this package's direct imports
-	RawImports   []string             // this package's original imports as they appear in the text of the program
-	ForceLibrary bool                 // this package is a library (even if named "main")
-	CmdlineFiles bool                 // package built from files listed on command line
-	CmdlinePkg   bool                 // package listed on command line
-	Local        bool                 // imported via local path (./ or ../)
-	LocalPrefix  string               // interpret ./ and ../ imports relative to this prefix
-	ExeName      string               // desired name for temporary executable
-	CoverMode    string               // preprocess Go source files with the coverage tool in this mode
-	CoverVars    map[string]*CoverVar // variables created by coverage analysis
-	OmitDebug    bool                 // tell linker not to write debug information
-	GobinSubdir  bool                 // install target would be subdir of GOBIN
-	BuildInfo    string               // add this info to package main
-	TestmainGo   *[]byte              // content for _testmain.go
+	Build             *build.Package
+	Imports           []*Package           // this package's direct imports
+	RawImports        []string             // this package's original imports as they appear in the text of the program
+	ForceLibrary      bool                 // this package is a library (even if named "main")
+	CmdlineFiles      bool                 // package built from files listed on command line
+	CmdlinePkg        bool                 // package listed on command line
+	CmdlinePkgLiteral bool                 // package listed as literal on command line (not via wildcard)
+	Local             bool                 // imported via local path (./ or ../)
+	LocalPrefix       string               // interpret ./ and ../ imports relative to this prefix
+	ExeName           string               // desired name for temporary executable
+	CoverMode         string               // preprocess Go source files with the coverage tool in this mode
+	CoverVars         map[string]*CoverVar // variables created by coverage analysis
+	OmitDebug         bool                 // tell linker not to write debug information
+	GobinSubdir       bool                 // install target would be subdir of GOBIN
+	BuildInfo         string               // add this info to package main
+	TestmainGo        *[]byte              // content for _testmain.go
 
 	Asmflags   []string // -asmflags for this package
 	Gcflags    []string // -gcflags for this package
@@ -1117,8 +1117,9 @@ func (p *Package) load(stk *ImportStack, bp *build.Package, err error) {
 	// of fmt before it attempts to load as a command-line argument.
 	// Because loads are cached, the later load will be a no-op,
 	// so it is important that the first load can fill in CmdlinePkg correctly.
-	// Hence the call to an explicit matching check here.
+	// Hence the call to a separate matching check here.
 	p.Internal.CmdlinePkg = isCmdlinePkg(p)
+	p.Internal.CmdlinePkgLiteral = isCmdlinePkgLiteral(p)
 
 	p.Internal.Asmflags = BuildAsmflags.For(p)
 	p.Internal.Gcflags = BuildGcflags.For(p)

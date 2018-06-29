@@ -19,10 +19,6 @@ import (
 	"cmd/go/internal/modfetch/codehost"
 )
 
-func init() {
-	isTest = true
-}
-
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
 }
@@ -36,6 +32,15 @@ func testMain(m *testing.M) int {
 
 	codehost.WorkRoot = dir
 	return m.Run()
+}
+
+const (
+	vgotest1git = "github.com/rsc/vgotest1"
+	vgotest1hg  = "vcs-test.golang.org/hg/vgotest1.hg"
+)
+
+var altVgotests = []string{
+	vgotest1hg,
 }
 
 var codeRepoTests = []struct {
@@ -90,7 +95,7 @@ var codeRepoTests = []struct {
 	},
 	{
 		path:    "github.com/rsc/vgotest1",
-		rev:     "80d85",
+		rev:     "80d85c5",
 		version: "v0.0.0-20180219231006-80d85c5d4d17",
 		name:    "80d85c5d4d17598a0e9055e7c175a32b415d6128",
 		short:   "80d85c5d4d17",
@@ -116,7 +121,7 @@ var codeRepoTests = []struct {
 	},
 	{
 		path:     "github.com/rsc/vgotest1/v2",
-		rev:      "80d85",
+		rev:      "80d85c5",
 		version:  "v2.0.0-20180219231006-80d85c5d4d17",
 		name:     "80d85c5d4d17598a0e9055e7c175a32b415d6128",
 		short:    "80d85c5d4d17",
@@ -126,7 +131,7 @@ var codeRepoTests = []struct {
 	},
 	{
 		path:    "github.com/rsc/vgotest1/v54321",
-		rev:     "80d85",
+		rev:     "80d85c5",
 		version: "v54321.0.0-20180219231006-80d85c5d4d17",
 		name:    "80d85c5d4d17598a0e9055e7c175a32b415d6128",
 		short:   "80d85c5d4d17",
@@ -136,12 +141,12 @@ var codeRepoTests = []struct {
 	{
 		path: "github.com/rsc/vgotest1/submod",
 		rev:  "v1.0.0",
-		err:  "unknown revision \"submod/v1.0.0\"",
+		err:  "unknown revision submod/v1.0.0",
 	},
 	{
 		path: "github.com/rsc/vgotest1/submod",
 		rev:  "v1.0.3",
-		err:  "unknown revision \"submod/v1.0.3\"",
+		err:  "unknown revision submod/v1.0.3",
 	},
 	{
 		path:    "github.com/rsc/vgotest1/submod",
@@ -209,33 +214,6 @@ var codeRepoTests = []struct {
 		gomod:   "module \"github.com/rsc/vgotest1/v2\" // v2/go.mod\n",
 	},
 	{
-		path:    "go.googlesource.com/scratch",
-		rev:     "0f302529858",
-		version: "v0.0.0-20180220024720-0f3025298580",
-		name:    "0f30252985809011f026b5a2d5cf456e021623da",
-		short:   "0f3025298580",
-		time:    time.Date(2018, 2, 20, 2, 47, 20, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule go.googlesource.com/scratch\n",
-	},
-	{
-		path:    "go.googlesource.com/scratch/rsc",
-		rev:     "0f302529858",
-		version: "v0.0.0-20180220024720-0f3025298580",
-		name:    "0f30252985809011f026b5a2d5cf456e021623da",
-		short:   "0f3025298580",
-		time:    time.Date(2018, 2, 20, 2, 47, 20, 0, time.UTC),
-		gomod:   "",
-	},
-	{
-		path:     "go.googlesource.com/scratch/cbro",
-		rev:      "0f302529858",
-		version:  "v0.0.0-20180220024720-0f3025298580",
-		name:     "0f30252985809011f026b5a2d5cf456e021623da",
-		short:    "0f3025298580",
-		time:     time.Date(2018, 2, 20, 2, 47, 20, 0, time.UTC),
-		gomoderr: "missing go.mod",
-	},
-	{
 		// redirect to github
 		path:    "rsc.io/quote",
 		rev:     "v1.0.0",
@@ -274,8 +252,10 @@ var codeRepoTests = []struct {
 	},
 	{
 		// package in subdirectory - custom domain
-		path:    "golang.org/x/net/context",
-		lookerr: "module root is \"golang.org/x/net\"",
+		// In general we can't reject these definitively in Lookup,
+		// but gopkg.in is special.
+		path:    "gopkg.in/yaml.v2/abc",
+		lookerr: "invalid module path \"gopkg.in/yaml.v2/abc\"",
 	},
 	{
 		// package in subdirectory - github
@@ -294,7 +274,7 @@ var codeRepoTests = []struct {
 		name:    "d670f9405373e636a5a2765eea47fac0c9bc91a4",
 		short:   "d670f9405373",
 		time:    time.Date(2018, 1, 9, 11, 43, 31, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule gopkg.in/yaml.v2\n",
+		gomod:   "module gopkg.in/yaml.v2\n",
 	},
 	{
 		path:    "gopkg.in/check.v1",
@@ -303,7 +283,7 @@ var codeRepoTests = []struct {
 		name:    "20d25e2804050c1cd24a7eea1e7a6447dd0e74ec",
 		short:   "20d25e280405",
 		time:    time.Date(2016, 12, 8, 18, 13, 25, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule gopkg.in/check.v1\n",
+		gomod:   "module gopkg.in/check.v1\n",
 	},
 	{
 		path:    "gopkg.in/yaml.v2",
@@ -321,7 +301,7 @@ var codeRepoTests = []struct {
 		name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 		short:   "ede458df7cd0",
 		time:    time.Date(2018, 4, 17, 19, 43, 22, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule vcs-test.golang.org/go/mod/gitrepo1\n",
+		gomod:   "module vcs-test.golang.org/go/mod/gitrepo1\n",
 	},
 	{
 		path:    "gopkg.in/natefinch/lumberjack.v2",
@@ -330,7 +310,7 @@ var codeRepoTests = []struct {
 		name:    "a96e63847dc3c67d17befa69c303767e2f84e54f",
 		short:   "a96e63847dc3",
 		time:    time.Date(2017, 5, 31, 16, 3, 50, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule gopkg.in/natefinch/lumberjack.v2\n",
+		gomod:   "module gopkg.in/natefinch/lumberjack.v2\n",
 	},
 	{
 		path: "gopkg.in/natefinch/lumberjack.v2",
@@ -345,7 +325,7 @@ var codeRepoTests = []struct {
 		name:    "a96e63847dc3c67d17befa69c303767e2f84e54f",
 		short:   "a96e63847dc3",
 		time:    time.Date(2017, 5, 31, 16, 3, 50, 0, time.UTC),
-		gomod:   "//vgo 0.0.4\n\nmodule gopkg.in/natefinch/lumberjack.v2\n",
+		gomod:   "module gopkg.in/natefinch/lumberjack.v2\n",
 	},
 }
 
@@ -358,15 +338,15 @@ func TestCodeRepo(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpdir)
 	for _, tt := range codeRepoTests {
-		t.Run(strings.Replace(tt.path, "/", "_", -1)+"/"+tt.rev, func(t *testing.T) {
+		f := func(t *testing.T) {
 			repo, err := Lookup(tt.path)
-			if err != nil {
-				if tt.lookerr != "" {
-					if err.Error() == tt.lookerr {
-						return
-					}
-					t.Errorf("Lookup(%q): %v, want error %q", tt.path, err, tt.lookerr)
+			if tt.lookerr != "" {
+				if err != nil && err.Error() == tt.lookerr {
+					return
 				}
+				t.Errorf("Lookup(%q): %v, want error %q", tt.path, err, tt.lookerr)
+			}
+			if err != nil {
 				t.Fatalf("Lookup(%q): %v", tt.path, err)
 			}
 			if tt.mpath == "" {
@@ -446,8 +426,56 @@ func TestCodeRepo(t *testing.T) {
 					t.Fatalf("zip = %v\nwant %v\n", names, tt.zip)
 				}
 			}
-		})
+		}
+		t.Run(strings.Replace(tt.path, "/", "_", -1)+"/"+tt.rev, f)
+		if strings.HasPrefix(tt.path, vgotest1git) {
+			for _, alt := range altVgotests {
+				// Note: Communicating with f through tt; should be cleaned up.
+				old := tt
+				tt.path = alt + strings.TrimPrefix(tt.path, vgotest1git)
+				if strings.HasPrefix(tt.mpath, vgotest1git) {
+					tt.mpath = alt + strings.TrimPrefix(tt.mpath, vgotest1git)
+				}
+				var m map[string]string
+				if alt == vgotest1hg {
+					m = hgmap
+				}
+				tt.version = remap(tt.version, m)
+				tt.name = remap(tt.name, m)
+				tt.short = remap(tt.short, m)
+				tt.rev = remap(tt.rev, m)
+				t.Run(strings.Replace(tt.path, "/", "_", -1)+"/"+tt.rev, f)
+				tt = old
+			}
+		}
 	}
+}
+
+var hgmap = map[string]string{
+	"f18795870fb14388a21ef3ebc1d75911c8694f31": "a9ad6d1d14eb544f459f446210c7eb3b009807c6",
+	"ea65f87c8f52c15ea68f3bdd9925ef17e20d91e9": "f1fc0f22021b638d073d31c752847e7bf385def7",
+	"b769f2de407a4db81af9c5de0a06016d60d2ea09": "92c7eb888b4fac17f1c6bd2e1060a1b881a3b832",
+	"8afe2b2efed96e0880ecd2a69b98a53b8c2738b6": "4e58084d459ae7e79c8c2264d0e8e9a92eb5cd44",
+	"2f615117ce481c8efef46e0cc0b4b4dccfac8fea": "879ea98f7743c8eff54f59a918f3a24123d1cf46",
+	"80d85c5d4d17598a0e9055e7c175a32b415d6128": "e125018e286a4b09061079a81e7b537070b7ff71",
+	"1f863feb76bc7029b78b21c5375644838962f88d": "bf63880162304a9337477f3858f5b7e255c75459",
+}
+
+func remap(name string, m map[string]string) string {
+	if m[name] != "" {
+		return m[name]
+	}
+	if codehost.AllHex(name) {
+		for k, v := range m {
+			if strings.HasPrefix(k, name) {
+				return v[:len(name)]
+			}
+		}
+	}
+	if i := strings.LastIndex(name, "-"); i >= 0 { // remap tail of pseudo-version
+		return name[:i+1] + remap(name[i+1:], m)
+	}
+	return name
 }
 
 var importTests = []struct {
@@ -473,7 +501,8 @@ var importTests = []struct {
 	},
 	{
 		path: "golang.org/x/foo/bar",
-		err:  "unknown module golang.org/x/foo/bar: no go-import tags",
+		// TODO(rsc): This error comes from old go get and is terrible. Fix.
+		err: `unrecognized import path "golang.org/x/foo/bar" (parse https://golang.org/x/foo/bar?go-get=1: no go-import meta tags ())`,
 	},
 }
 
@@ -483,14 +512,14 @@ func TestImport(t *testing.T) {
 	for _, tt := range importTests {
 		t.Run(strings.Replace(tt.path, "/", "_", -1), func(t *testing.T) {
 			repo, info, err := Import(tt.path, nil)
-			if err != nil {
-				if tt.err != "" {
-					if err.Error() == tt.err {
-						return
-					}
-					t.Errorf("Import(%q): %v, want error %q", tt.path, err, tt.err)
+			if tt.err != "" {
+				if err != nil && err.Error() == tt.err {
+					return
 				}
-				t.Fatalf("Lookup(%q): %v", tt.path, err)
+				t.Fatalf("Import(%q): %v, want error %q", tt.path, err, tt.err)
+			}
+			if err != nil {
+				t.Fatalf("Import(%q): %v", tt.path, err)
 			}
 			if mpath := repo.ModulePath(); mpath != tt.mpath {
 				t.Errorf("repo.ModulePath() = %q (%v), want %q", mpath, info.Version, tt.mpath)
@@ -610,12 +639,10 @@ func TestLatest(t *testing.T) {
 
 // fixedTagsRepo is a fake codehost.Repo that returns a fixed list of tags
 type fixedTagsRepo struct {
-	root string
 	tags []string
 }
 
 func (ch *fixedTagsRepo) Tags(string) ([]string, error)                  { return ch.tags, nil }
-func (ch *fixedTagsRepo) Root() string                                   { return ch.root }
 func (ch *fixedTagsRepo) Latest() (*codehost.RevInfo, error)             { panic("not impl") }
 func (ch *fixedTagsRepo) ReadFile(string, string, int64) ([]byte, error) { panic("not impl") }
 func (ch *fixedTagsRepo) ReadZip(string, string, int64) (io.ReadCloser, string, error) {
@@ -626,7 +653,6 @@ func (ch *fixedTagsRepo) Stat(string) (*codehost.RevInfo, error) { panic("not im
 func TestNonCanonicalSemver(t *testing.T) {
 	root := "golang.org/x/issue24476"
 	ch := &fixedTagsRepo{
-		root: root,
 		tags: []string{
 			"", "huh?", "1.0.1",
 			// what about "version 1 dot dogcow"?
@@ -637,7 +663,7 @@ func TestNonCanonicalSemver(t *testing.T) {
 		},
 	}
 
-	cr, err := newCodeRepo(ch, root)
+	cr, err := newCodeRepo(ch, root, root)
 	if err != nil {
 		t.Fatal(err)
 	}

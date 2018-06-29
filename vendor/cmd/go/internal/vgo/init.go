@@ -194,8 +194,9 @@ func InitMod() {
 		os.Rename(srcV, SrcMod)
 	}
 
-	modfetch.CacheRoot = filepath.Join(SrcMod, "cache")
-	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcswork")
+	modfetch.SrcMod = SrcMod
+	modfetch.GoSumFile = filepath.Join(ModRoot, "go.sum")
+	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcs")
 
 	if CmdModInit {
 		// Running go mod -init: do legacy module conversion
@@ -270,7 +271,7 @@ func legacyModInit() {
 			}
 			fmt.Fprintf(os.Stderr, "vgo: copying requirements from %s\n", cfg)
 			cfg = filepath.ToSlash(cfg)
-			if err := modfetch.ConvertLegacyConfig(modFile, cfg, data); err != nil {
+			if err := modconv.ConvertLegacyConfig(modFile, cfg, data); err != nil {
 				base.Fatalf("vgo: %v", err)
 			}
 			if len(modFile.Syntax.Stmt) == 1 {
@@ -425,7 +426,7 @@ func findImportComment(file string) string {
 
 // WriteGoMod writes the current build list back to go.mod.
 func WriteGoMod() {
-	writeModHash()
+	modfetch.WriteGoSum()
 
 	if buildList != nil {
 		min, err := mvs.Req(Target, buildList, newReqs())

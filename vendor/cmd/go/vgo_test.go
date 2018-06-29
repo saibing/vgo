@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 
 	"cmd/go/internal/modconv"
@@ -268,7 +269,7 @@ func TestTags(t *testing.T) {
 	tg.cd(tg.path("x"))
 
 	tg.runFail("-vgo", "list", "-f={{.GoFiles}}")
-	tg.grepStderr("no Go source files", "no Go source files without tags")
+	tg.grepStderr("build constraints exclude all Go files", "no Go source files without tags")
 
 	tg.run("-vgo", "list", "-f={{.GoFiles}}", "-tags=tag1")
 	tg.grepStdout(`\[x.go\]`, "Go source files for tag1")
@@ -325,7 +326,7 @@ func TestGetModuleVersion(t *testing.T) {
 		require github.com/gobuffalo/uuid v1.1.0
 	`), 0666))
 	tg.run("-vgo", "get", "github.com/gobuffalo/uuid@v2.0.0")
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 	tg.grepStdout("github.com/gobuffalo/uuid.*v0.0.0-20180207211247-3a9fb6c5c481", "did downgrade to v0.0.0-*")
 
 	tooSlow(t)
@@ -335,16 +336,42 @@ func TestGetModuleVersion(t *testing.T) {
 		require github.com/gobuffalo/uuid v1.2.0
 	`), 0666))
 	tg.run("-vgo", "get", "github.com/gobuffalo/uuid@v1.1.0")
-	tg.run("-vgo", "list", "-m")
-	tg.grepStdout("github.com/gobuffalo/uuid.*v1.1.0", "did downgrade to v1.1.0")
+	tg.run("-vgo", "list", "-m", "-u", "all")
+	tg.grepStdout(`github.com/gobuffalo/uuid v1.1.0`, "did downgrade to v1.1.0")
+	tg.grepStdout(`github.com/gobuffalo/uuid v1.1.0 \[v1`, "did show upgrade to v1.2.0 or later")
 
 	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
 		module x
 		require github.com/gobuffalo/uuid v1.1.0
 	`), 0666))
 	tg.run("-vgo", "get", "github.com/gobuffalo/uuid@v1.2.0")
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 	tg.grepStdout("github.com/gobuffalo/uuid.*v1.2.0", "did upgrade to v1.2.0")
+
+	// @7f39a6fea4fe9364 should resolve,
+	// and also there should be no build error about not having Go files in the root.
+	tg.run("-vgo", "get", "golang.org/x/crypto@7f39a6fea4fe9364")
+
+	// @7f39a6fea4fe9364 should resolve.
+	// Now there should be no build at all.
+	tg.run("-vgo", "get", "-m", "golang.org/x/crypto@7f39a6fea4fe9364")
+
+	// TODO(rsc): These should work, but "go get" needs more work
+	// regarding packages versus modules.
+
+	// @7f39a6fea4fe9364 should resolve.
+	// Now there should be no build at all.
+	// tg.run("-vgo", "get", "-m", "-x", "golang.org/x/crypto/pbkdf2@7f39a6fea4fe9364")
+	// tg.grepStderrNot("compile", "should not see compile steps")
+
+	// @7f39a6fea4fe9364 should resolve.
+	// Now there should be a build
+	// tg.run("-vgo", "get", "-x", "golang.org/x/crypto/pbkdf2@7f39a6fea4fe9364")
+	// tg.grepStderr("compile", "should see compile steps")
+
+	// .../pbkdf2@7f39a6fea4fe9364 should NOT resolve:
+	// we are using -m and .../pbkdf2 is not a module path.
+	tg.runFail("-vgo", "get", "-m", "golang.org/x/crypto/pbkdf2@7f39a6fea4fe9364")
 }
 
 func TestVgoBadDomain(t *testing.T) {
@@ -354,9 +381,9 @@ func TestVgoBadDomain(t *testing.T) {
 	tg.cd(filepath.Join(wd, "testdata/badmod"))
 
 	tg.runFail("-vgo", "get", "appengine")
-	tg.grepStderr("unknown module appengine: not a domain name", "expected domain error")
+	tg.grepStderr(`unrecognized import path \"appengine\"`, "expected appengine error ")
 	tg.runFail("-vgo", "get", "x/y.z")
-	tg.grepStderr("unknown module x/y.z: not a domain name", "expected domain error")
+	tg.grepStderr(`unrecognized import path \"x/y.z\" \(import path does not begin with hostname\)`, "expected domain error")
 
 	tg.runFail("-vgo", "build")
 	tg.grepStderrNot("unknown module appengine: not a domain name", "expected nothing about appengine")
@@ -433,7 +460,7 @@ package sub
 	tg.grepStderr(`^unused y.1`, "need y.1 unused")
 	tg.grepStderrNot(`^unused [^y]`, "only y.1 should be unused")
 
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 	tg.grepStdoutNot(`^y.1`, "y should be gone")
 	tg.grepStdout(`^w.1\s+v1.2.0`, "need w.1 to stay at v1.2.0")
 	tg.grepStdout(`^z.1\s+v1.2.0`, "need z.1 to stay at v1.2.0 even though y is gone")
@@ -447,7 +474,7 @@ func TestVgoVendor(t *testing.T) {
 	tg.cd(filepath.Join(wd, "testdata/vendormod"))
 	defer os.RemoveAll(filepath.Join(wd, "testdata/vendormod/vendor"))
 
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 	tg.grepStdout(`^x`, "expected to see module x")
 	tg.grepStdout(`=> ./x`, "expected to see replacement for module x")
 	tg.grepStdout(`^w`, "expected to see module w")
@@ -473,7 +500,13 @@ func TestVgoVendor(t *testing.T) {
 	tg.run("-vgo", "list", "-f={{.Dir}}", "x")
 	tg.grepStdout(`vendormod[/\\]x$`, "expected x in vendormod/x")
 
+	tg.run("-vgo", "list", "-f={{.Dir}}", "-m", "x")
+	tg.grepStdout(`vendormod[/\\]x$`, "expected x in vendormod/x")
+
 	tg.run("-vgo", "list", "-getmode=vendor", "-f={{.Dir}}", "x")
+	tg.grepStdout(`vendormod[/\\]vendor[/\\]x$`, "expected x in vendormod/vendor/x in -get=vendor mode")
+
+	tg.run("-vgo", "list", "-getmode=vendor", "-f={{.Dir}}", "-m", "x")
 	tg.grepStdout(`vendormod[/\\]vendor[/\\]x$`, "expected x in vendormod/vendor/x in -get=vendor mode")
 
 	tg.run("-vgo", "list", "-f={{.Dir}}", "w")
@@ -485,7 +518,7 @@ func TestVgoVendor(t *testing.T) {
 	tg.grepStdout(`vendormod[/\\]w`, "expected w in vendormod/w")
 
 	tg.runFail("-vgo", "list", "-getmode=local", "-f={{.Dir}}", "newpkg")
-	tg.grepStderr(`module lookup disabled by -getmode=local`, "expected -getmode=local to avoid network")
+	tg.grepStderr(`disabled by -getmode=local`, "expected -getmode=local to avoid network")
 
 	if !testing.Short() {
 		tg.run("-vgo", "build")
@@ -520,7 +553,7 @@ func TestFillGoMod(t *testing.T) {
 	tg.cd(tg.path("x"))
 	tg.run("-vgo", "build", "-v")
 	tg.grepStderr("copying requirements from .*Gopkg.lock", "did not copy Gopkg.lock")
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 	tg.grepStderrNot("copying requirements from .*Gopkg.lock", "should not copy Gopkg.lock again")
 	tg.grepStdout("rsc.io/sampler.*v1.0.0", "did not copy Gopkg.lock")
 
@@ -619,33 +652,89 @@ func TestConvertLegacyConfig(t *testing.T) {
 		version = "v0.6.0"`), 0666))
 	tg.must(ioutil.WriteFile(tg.path("x/main.go"), []byte("package x // import \"x\"\n import _ \"github.com/pkg/errors\""), 0666))
 	tg.cd(tg.path("x"))
-	tg.run("-vgo", "list", "-m")
+	tg.run("-vgo", "list", "-m", "all")
 
 	// If the conversion just ignored the Gopkg.lock entirely
 	// it would choose a newer version (like v0.8.0 or maybe
 	// something even newer). Check for the older version to
 	// make sure Gopkg.lock was properly used.
-	tg.grepStderr("v0.6.0", "expected github.com/pkg/errors at v0.6.0")
+	tg.grepStdout("v0.6.0", "expected github.com/pkg/errors at v0.6.0")
 }
 
-func TestVerifyNotDownloaded(t *testing.T) {
+func TestVerify(t *testing.T) {
 	testenv.MustHaveExternalNetwork(t)
 	tg := testgo(t)
 	defer tg.cleanup()
 	tg.makeTempdir()
-	tg.setenv("GOPATH", tg.path("gp"))
+	gopath := tg.path("gp")
+	tg.setenv("GOPATH", gopath)
 	tg.must(os.MkdirAll(tg.path("x"), 0777))
 	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
 		module x
 		require github.com/pkg/errors v0.8.0
 	`), 0666))
-	tg.must(ioutil.WriteFile(tg.path("x/go.modverify"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
+	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x; import _ "github.com/pkg/errors"`), 0666))
+
+	// With correct go.sum,verify succeeds but avoids download.
+	tg.must(ioutil.WriteFile(tg.path("x/go.sum"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 `), 0666))
-	tg.must(ioutil.WriteFile(tg.path("x/x.go"), []byte(`package x`), 0666))
 	tg.cd(tg.path("x"))
 	tg.run("-vgo", "mod", "-verify")
-	tg.mustNotExist(filepath.Join(tg.path("gp"), "/src/mod/cache/github.com/pkg/errors/@v/v0.8.0.zip"))
-	tg.mustNotExist(filepath.Join(tg.path("gp"), "/src/mod/github.com/pkg"))
+	tg.mustNotExist(filepath.Join(gopath, "src/mod/cache/download/github.com/pkg/errors/@v/v0.8.0.zip"))
+	tg.mustNotExist(filepath.Join(gopath, "src/mod/github.com/pkg"))
+
+	// With incorrect sum, sync (which must download) fails.
+	// Even if the incorrect sum is in the old legacy go.modverify file.
+	tg.must(ioutil.WriteFile(tg.path("x/go.sum"), []byte(`
+`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/go.modverify"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf1+qw=
+`), 0666))
+	tg.runFail("-vgo", "mod", "-sync") // downloads pkg/errors
+	tg.grepStderr("checksum mismatch", "must detect mismatch")
+	tg.mustNotExist(filepath.Join(gopath, "src/mod/cache/download/github.com/pkg/errors/@v/v0.8.0.zip"))
+	tg.mustNotExist(filepath.Join(gopath, "src/mod/github.com/pkg"))
+
+	// With corrected sum, sync works.
+	tg.must(ioutil.WriteFile(tg.path("x/go.modverify"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
+`), 0666))
+	tg.run("-vgo", "mod", "-sync")
+	tg.mustExist(filepath.Join(gopath, "src/mod/cache/download/github.com/pkg/errors/@v/v0.8.0.zip"))
+	tg.mustExist(filepath.Join(gopath, "src/mod/github.com/pkg"))
+	tg.mustNotExist(tg.path("x/go.modverify")) // moved into go.sum
+
+	// Sync should have added sum for go.mod.
+	data, err := ioutil.ReadFile(tg.path("x/go.sum"))
+	if !strings.Contains(string(data), "\ngithub.com/pkg/errors v0.8.0/go.mod ") {
+		t.Fatalf("cannot find go.mod hash in go.sum: %v\n%s", err, data)
+	}
+
+	// Even the most basic attempt to load the module graph should detect incorrect go.mod files.
+	tg.run("-vgo", "mod", "-graph") // loads module graph, is OK
+	tg.must(ioutil.WriteFile(tg.path("x/go.sum"), []byte(`github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
+github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl1=
+`), 0666))
+	tg.runFail("-vgo", "mod", "-graph") // loads module graph, fails (even though sum is in old go.modverify file)
+	tg.grepStderr("go.mod: checksum mismatch", "must detect mismatch")
+
+	// go.sum should be created and updated automatically.
+	tg.must(os.Remove(tg.path("x/go.sum")))
+	tg.run("-vgo", "mod", "-graph")
+	tg.mustExist(tg.path("x/go.sum"))
+	data, err = ioutil.ReadFile(tg.path("x/go.sum"))
+	if !strings.Contains(string(data), " v0.8.0/go.mod ") {
+		t.Fatalf("cannot find go.mod hash in go.sum: %v\n%s", err, data)
+	}
+	if strings.Contains(string(data), " v0.8.0 ") {
+		t.Fatalf("unexpected module tree hash in go.sum: %v\n%s", err, data)
+	}
+	tg.run("-vgo", "mod", "-sync")
+	data, err = ioutil.ReadFile(tg.path("x/go.sum"))
+	if !strings.Contains(string(data), " v0.8.0/go.mod ") {
+		t.Fatalf("cannot find go.mod hash in go.sum: %v\n%s", err, data)
+	}
+	if !strings.Contains(string(data), " v0.8.0 ") {
+		t.Fatalf("cannot find module tree hash in go.sum: %v\n%s", err, data)
+	}
 }
 
 func TestVendorWithoutDeps(t *testing.T) {
@@ -685,4 +774,40 @@ func TestImportDir(t *testing.T) {
 	tg.must(os.MkdirAll(filepath.Join(runtime.GOROOT(), "src", "goji.io"), 0777))
 	tg.cd(tg.path("x"))
 	tg.run("-vgo", "build")
+}
+
+func TestModSyncPrintJson(t *testing.T) {
+	testenv.MustHaveExternalNetwork(t)
+	tg := testgo(t)
+	defer tg.cleanup()
+	tg.makeTempdir()
+
+	tg.setenv("GOPATH", tg.path("."))
+	tg.must(os.MkdirAll(tg.path("x"), 0777))
+	tg.must(ioutil.WriteFile(tg.path("x/main.go"), []byte(`
+		package x
+		import "github.com/gorilla/mux"
+		func main() {
+			_ := mux.NewRouter()
+		}`), 0666))
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte("module x"), 0666))
+	tg.cd(tg.path("x"))
+	tg.run("-vgo", "mod", "-sync", "-json")
+	count := tg.grepCountBoth(`"Path": "github.com/gorilla/mux",`)
+	if count != 1 {
+		t.Fatal("produces duplicate imports")
+	}
+	// test quoted module path
+	tg.must(ioutil.WriteFile(tg.path("x/go.mod"), []byte(`
+		module x
+		require (
+			"github.com/gorilla/context" v1.1.1
+			"github.com/gorilla/mux" v1.6.2
+	)`), 0666))
+	tg.run("-vgo", "mod", "-sync", "-json")
+	count = tg.grepCountBoth(`"Path": "github.com/gorilla/mux",`)
+	if count != 1 {
+		t.Fatal("produces duplicate imports")
+	}
+
 }

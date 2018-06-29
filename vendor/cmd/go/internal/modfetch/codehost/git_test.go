@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gitrepo
+package codehost
 
 import (
 	"archive/zip"
@@ -13,20 +13,30 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
-
-	"cmd/go/internal/modfetch/codehost"
 )
 
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
 }
 
-const gitrepo1 = "https://vcs-test.golang.org/git/gitrepo1"
+const (
+	gitrepo1 = "https://vcs-test.golang.org/git/gitrepo1"
+	hgrepo1  = "https://vcs-test.golang.org/hg/hgrepo1"
+)
+
+var altRepos = []string{
+	"localGitRepo",
+	hgrepo1,
+}
+
+// TODO: Convert gitrepo1 to svn, bzr, fossil and add tests.
+// For now, at least the hgrepo1 tests check the general vcs.go logic.
 
 // localGitRepo is like gitrepo1 but allows archive access.
 var localGitRepo string
@@ -43,7 +53,7 @@ func testMain(m *testing.M) int {
 		log.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	codehost.WorkRoot = dir
+	WorkRoot = dir
 
 	if testenv.HasExternalNetwork() && testenv.HasExec() {
 		// Clone gitrepo1 into a local directory.
@@ -51,10 +61,10 @@ func testMain(m *testing.M) int {
 		// then git starts up all the usual protocol machinery,
 		// which will let us test remote git archive invocations.
 		localGitRepo = filepath.Join(dir, "gitrepo2")
-		if _, err := codehost.Run("", "git", "clone", "--mirror", gitrepo1, localGitRepo); err != nil {
+		if _, err := Run("", "git", "clone", "--mirror", gitrepo1, localGitRepo); err != nil {
 			log.Fatal(err)
 		}
-		if _, err := codehost.Run(localGitRepo, "git", "config", "daemon.uploadarch", "true"); err != nil {
+		if _, err := Run(localGitRepo, "git", "config", "daemon.uploadarch", "true"); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -62,13 +72,17 @@ func testMain(m *testing.M) int {
 	return m.Run()
 }
 
-func testRepo(remote string) (codehost.Repo, error) {
+func testRepo(remote string) (Repo, error) {
 	if remote == "localGitRepo" {
-		remote = "file://" + filepath.ToSlash(localGitRepo)
+		return LocalGitRepo("file://" + filepath.ToSlash(localGitRepo))
 	}
-	// Re ?root: nothing should care about the second argument,
-	// so use a string that will be distinctive if it does show up.
-	return LocalRepo(remote, "?root")
+	kind := "git"
+	for _, k := range []string{"hg"} {
+		if strings.Contains(remote, "/"+k+"/") {
+			kind = k
+		}
+	}
+	return NewRepo(kind, remote)
 }
 
 var tagsTests = []struct {
@@ -101,25 +115,35 @@ func TestTags(t *testing.T) {
 				t.Errorf("Tags: incorrect tags\nhave %v\nwant %v", tags, tt.tags)
 			}
 		}
-		t.Run(tt.repo+"/"+tt.prefix, f)
+		t.Run(path.Base(tt.repo)+"/"+tt.prefix, f)
 		if tt.repo == gitrepo1 {
-			tt.repo = "localGitRepo"
-			t.Run(tt.repo+"/"+tt.prefix, f)
+			for _, tt.repo = range altRepos {
+				t.Run(path.Base(tt.repo)+"/"+tt.prefix, f)
+			}
 		}
 	}
 }
 
 var latestTests = []struct {
 	repo string
-	info *codehost.RevInfo
+	info *RevInfo
 }{
 	{
 		gitrepo1,
-		&codehost.RevInfo{
+		&RevInfo{
 			Name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Short:   "ede458df7cd0",
 			Version: "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Time:    time.Date(2018, 4, 17, 19, 43, 22, 0, time.UTC),
+		},
+	},
+	{
+		hgrepo1,
+		&RevInfo{
+			Name:    "18518c07eb8ed5c80221e997e518cccaa8c0c287",
+			Short:   "18518c07eb8e",
+			Version: "18518c07eb8ed5c80221e997e518cccaa8c0c287",
+			Time:    time.Date(2018, 6, 27, 16, 16, 30, 0, time.UTC),
 		},
 	},
 }
@@ -142,10 +166,10 @@ func TestLatest(t *testing.T) {
 				t.Errorf("Latest: incorrect info\nhave %+v\nwant %+v", *info, *tt.info)
 			}
 		}
-		t.Run(tt.repo, f)
+		t.Run(path.Base(tt.repo), f)
 		if tt.repo == gitrepo1 {
 			tt.repo = "localGitRepo"
-			t.Run(tt.repo, f)
+			t.Run(path.Base(tt.repo), f)
 		}
 	}
 }
@@ -159,7 +183,7 @@ var readFileTests = []struct {
 }{
 	{
 		repo: gitrepo1,
-		rev:  "HEAD",
+		rev:  "latest",
 		file: "README",
 		data: "",
 	},
@@ -207,10 +231,11 @@ func TestReadFile(t *testing.T) {
 				t.Errorf("ReadFile: incorrect data\nhave %q\nwant %q", data, tt.data)
 			}
 		}
-		t.Run(tt.repo+"/"+tt.rev+"/"+tt.file, f)
+		t.Run(path.Base(tt.repo)+"/"+tt.rev+"/"+tt.file, f)
 		if tt.repo == gitrepo1 {
-			tt.repo = "localGitRepo"
-			t.Run(tt.repo+"/"+tt.rev+"/"+tt.file, f)
+			for _, tt.repo = range altRepos {
+				t.Run(path.Base(tt.repo)+"/"+tt.rev+"/"+tt.file, f)
+			}
 		}
 	}
 }
@@ -234,6 +259,17 @@ var readZipTests = []struct {
 		},
 	},
 	{
+		repo:   hgrepo1,
+		rev:    "v2.3.4",
+		subdir: "",
+		files: map[string]uint64{
+			"prefix/.hg_archival.txt": ^uint64(0),
+			"prefix/README":           0,
+			"prefix/v2":               3,
+		},
+	},
+
+	{
 		repo:   gitrepo1,
 		rev:    "v2",
 		subdir: "",
@@ -245,6 +281,19 @@ var readZipTests = []struct {
 			"prefix/foo.txt":     13,
 		},
 	},
+	{
+		repo:   hgrepo1,
+		rev:    "v2",
+		subdir: "",
+		files: map[string]uint64{
+			"prefix/.hg_archival.txt": ^uint64(0),
+			"prefix/README":           0,
+			"prefix/v2":               3,
+			"prefix/another.txt":      8,
+			"prefix/foo.txt":          13,
+		},
+	},
+
 	{
 		repo:   gitrepo1,
 		rev:    "v3",
@@ -259,6 +308,18 @@ var readZipTests = []struct {
 		},
 	},
 	{
+		repo:   hgrepo1,
+		rev:    "v3",
+		subdir: "",
+		files: map[string]uint64{
+			"prefix/.hg_archival.txt":    ^uint64(0),
+			"prefix/.hgtags":             405,
+			"prefix/v3/sub/dir/file.txt": 16,
+			"prefix/README":              0,
+		},
+	},
+
+	{
 		repo:   gitrepo1,
 		rev:    "v3",
 		subdir: "v3/sub/dir",
@@ -270,6 +331,15 @@ var readZipTests = []struct {
 			"prefix/v3/sub/dir/file.txt": 16,
 		},
 	},
+	{
+		repo:   hgrepo1,
+		rev:    "v3",
+		subdir: "v3/sub/dir",
+		files: map[string]uint64{
+			"prefix/v3/sub/dir/file.txt": 16,
+		},
+	},
+
 	{
 		repo:   gitrepo1,
 		rev:    "v3",
@@ -283,11 +353,27 @@ var readZipTests = []struct {
 		},
 	},
 	{
+		repo:   hgrepo1,
+		rev:    "v3",
+		subdir: "v3/sub",
+		files: map[string]uint64{
+			"prefix/v3/sub/dir/file.txt": 16,
+		},
+	},
+
+	{
 		repo:   gitrepo1,
 		rev:    "aaaaaaaaab",
 		subdir: "",
-		err:    "cannot find hash",
+		err:    "unknown revision",
 	},
+	{
+		repo:   hgrepo1,
+		rev:    "aaaaaaaaab",
+		subdir: "",
+		err:    "unknown revision",
+	},
+
 	{
 		repo:   "https://github.com/rsc/vgotest1",
 		rev:    "submod/v1.0.4",
@@ -353,7 +439,7 @@ func TestReadZip(t *testing.T) {
 					continue
 				}
 				have[f.Name] = true
-				if f.UncompressedSize64 != size {
+				if size != ^uint64(0) && f.UncompressedSize64 != size {
 					t.Errorf("ReadZip: file %s has unexpected size %d != %d", f.Name, f.UncompressedSize64, size)
 				}
 			}
@@ -363,24 +449,32 @@ func TestReadZip(t *testing.T) {
 				}
 			}
 		}
-		t.Run(tt.repo+"/"+tt.rev+"/"+tt.subdir, f)
+		t.Run(path.Base(tt.repo)+"/"+tt.rev+"/"+tt.subdir, f)
 		if tt.repo == gitrepo1 {
 			tt.repo = "localGitRepo"
-			t.Run(tt.repo+"/"+tt.rev+"/"+tt.subdir, f)
+			t.Run(path.Base(tt.repo)+"/"+tt.rev+"/"+tt.subdir, f)
 		}
 	}
+}
+
+var hgmap = map[string]string{
+	"HEAD": "41964ddce1180313bdc01d0a39a2813344d6261d", // not tip due to bad hgrepo1 conversion
+	"9d02800338b8a55be062c838d1f02e0c5780b9eb": "8f49ee7a6ddcdec6f0112d9dca48d4a2e4c3c09e",
+	"76a00fb249b7f93091bc2c89a789dab1fc1bc26f": "88fde824ec8b41a76baa16b7e84212cee9f3edd0",
+	"ede458df7cd0fdca520df19a33158086a8a68e81": "41964ddce1180313bdc01d0a39a2813344d6261d",
+	"97f6aa59c81c623494825b43d39e445566e429a4": "c0cbbfb24c7c3c50c35c7b88e7db777da4ff625d",
 }
 
 var statTests = []struct {
 	repo string
 	rev  string
 	err  string
-	info *codehost.RevInfo
+	info *RevInfo
 }{
 	{
 		repo: gitrepo1,
 		rev:  "HEAD",
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Short:   "ede458df7cd0",
 			Version: "ede458df7cd0fdca520df19a33158086a8a68e81",
@@ -390,7 +484,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "v2", // branch
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "9d02800338b8a55be062c838d1f02e0c5780b9eb",
 			Short:   "9d02800338b8",
 			Version: "9d02800338b8a55be062c838d1f02e0c5780b9eb",
@@ -400,7 +494,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "v2.3.4", // badly-named branch (semver should be a tag)
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "76a00fb249b7f93091bc2c89a789dab1fc1bc26f",
 			Short:   "76a00fb249b7",
 			Version: "76a00fb249b7f93091bc2c89a789dab1fc1bc26f",
@@ -410,7 +504,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "v2.3", // badly-named tag (we only respect full semver v2.3.0)
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "76a00fb249b7f93091bc2c89a789dab1fc1bc26f",
 			Short:   "76a00fb249b7",
 			Version: "v2.3",
@@ -420,7 +514,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "v1.2.3", // tag
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Short:   "ede458df7cd0",
 			Version: "v1.2.3",
@@ -430,7 +524,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "ede458df", // hash prefix in refs
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Short:   "ede458df7cd0",
 			Version: "ede458df7cd0fdca520df19a33158086a8a68e81",
@@ -440,7 +534,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "97f6aa59", // hash prefix not in refs
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "97f6aa59c81c623494825b43d39e445566e429a4",
 			Short:   "97f6aa59c81c",
 			Version: "97f6aa59c81c623494825b43d39e445566e429a4",
@@ -450,7 +544,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "v1.2.4-annotated", // annotated tag uses unwrapped commit hash
-		info: &codehost.RevInfo{
+		info: &RevInfo{
 			Name:    "ede458df7cd0fdca520df19a33158086a8a68e81",
 			Short:   "ede458df7cd0",
 			Version: "v1.2.4-annotated",
@@ -460,7 +554,7 @@ var statTests = []struct {
 	{
 		repo: gitrepo1,
 		rev:  "aaaaaaaaab",
-		err:  "cannot find hash",
+		err:  "unknown revision",
 	},
 }
 
@@ -491,10 +585,39 @@ func TestStat(t *testing.T) {
 				t.Errorf("Stat: incorrect info\nhave %+v\nwant %+v", *info, *tt.info)
 			}
 		}
-		t.Run(filepath.Base(tt.repo)+"/"+tt.rev, f)
+		t.Run(path.Base(tt.repo)+"/"+tt.rev, f)
 		if tt.repo == gitrepo1 {
-			tt.repo = "localGitRepo"
-			t.Run(filepath.Base(tt.repo)+"/"+tt.rev, f)
+			for _, tt.repo = range altRepos {
+				old := tt
+				var m map[string]string
+				if tt.repo == hgrepo1 {
+					m = hgmap
+				}
+				if tt.info != nil {
+					info := *tt.info
+					tt.info = &info
+					tt.info.Name = remap(tt.info.Name, m)
+					tt.info.Version = remap(tt.info.Version, m)
+					tt.info.Short = remap(tt.info.Short, m)
+				}
+				tt.rev = remap(tt.rev, m)
+				t.Run(path.Base(tt.repo)+"/"+tt.rev, f)
+				tt = old
+			}
 		}
 	}
+}
+
+func remap(name string, m map[string]string) string {
+	if m[name] != "" {
+		return m[name]
+	}
+	if AllHex(name) {
+		for k, v := range m {
+			if strings.HasPrefix(k, name) {
+				return v[:len(name)]
+			}
+		}
+	}
+	return name
 }

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"cmd/go/internal/modconv"
 	"cmd/go/internal/modfetch/codehost"
 	"cmd/go/internal/par"
 	"cmd/go/internal/semver"
@@ -21,7 +20,7 @@ import (
 
 var QuietLookup bool // do not print about lookups
 
-var CacheRoot string // $GOPATH/src/mod/cache
+var SrcMod string // $GOPATH/src/mod; set by package vgo
 
 // A cachingRepo is a cache around an underlying Repo,
 // avoiding redundant calls to ModulePath, Versions, Stat, Latest, and GoMod (but not Zip).
@@ -104,10 +103,6 @@ func (r *cachingRepo) Stat(rev string) (*RevInfo, error) {
 }
 
 func (r *cachingRepo) Latest() (*RevInfo, error) {
-	type cachedInfo struct {
-		info *RevInfo
-		err  error
-	}
 	c := r.cache.Do("latest:", func() interface{} {
 		if !QuietLookup {
 			fmt.Fprintf(os.Stderr, "vgo: finding %s latest\n", r.path)
@@ -142,10 +137,20 @@ func (r *cachingRepo) GoMod(rev string) ([]byte, error) {
 	c := r.cache.Do("gomod:"+rev, func() interface{} {
 		file, text, err := readDiskGoMod(r.path, rev)
 		if err == nil {
+			// Note: readDiskGoMod already called checkGoMod.
 			return cached{text, nil}
 		}
 
+		// Convert rev to canonical version
+		// so that we use the right identifier in the go.sum check.
+		info, err := r.Stat(rev)
+		if err != nil {
+			return cached{nil, err}
+		}
+		rev = info.Version
+
 		text, err = r.r.GoMod(rev)
+		checkGoMod(r.path, rev, text)
 		if err == nil {
 			if err := writeDiskGoMod(file, text); err != nil {
 				fmt.Fprintf(os.Stderr, "go: writing go.mod cache: %v\n", err)
@@ -240,7 +245,7 @@ func readDiskStatByHash(path, rev string) (file string, info *RevInfo, err error
 		return "", nil, errNotCached
 	}
 	rev = rev[:12]
-	dir, err := os.Open(filepath.Join(CacheRoot, path, "@v"))
+	dir, err := os.Open(filepath.Join(SrcMod, "cache/download", path, "@v"))
 	if err != nil {
 		return "", nil, errNotCached
 	}
@@ -258,7 +263,12 @@ func readDiskStatByHash(path, rev string) (file string, info *RevInfo, err error
 	return "", nil, errNotCached
 }
 
-var vgoVersion = []byte(modconv.Prefix)
+// oldVgoPrefix is the prefix in the old auto-generated cached go.mod files.
+// We stopped trying to auto-generate the go.mod files. Now we use a trivial
+// go.mod with only a module line, and we've dropped the version prefix
+// entirely. If we see a version prefix, that means we're looking at an old copy
+// and should ignore it.
+var oldVgoPrefix = []byte("//vgo 0.0.")
 
 // readDiskGoMod reads a cached stat result from disk,
 // returning the name of the cache file and the result.
@@ -267,17 +277,14 @@ var vgoVersion = []byte(modconv.Prefix)
 func readDiskGoMod(path, rev string) (file string, data []byte, err error) {
 	file, data, err = readDiskCache(path, rev, "mod")
 
-	// If go.mod has a //vgo comment at the start,
-	// it was auto-converted from a legacy lock file.
-	// The auto-conversion details may have bugs and
-	// may be fixed in newer versions of vgo.
-	// We ignore cached go.mod files if they do not match
-	// our own vgoVersion.
-	// This use of "vgo" appears in disk files and must be preserved
-	// even once we excise most of the mentions of vgo from the code.
-	if err == nil && bytes.HasPrefix(data, vgoVersion[:len("//vgo")]) && !bytes.HasPrefix(data, vgoVersion) {
+	// If the file has an old auto-conversion prefix, pretend it's not there.
+	if bytes.HasPrefix(data, oldVgoPrefix) {
 		err = errNotCached
 		data = nil
+	}
+
+	if err == nil {
+		checkGoMod(path, rev, data)
 	}
 
 	return file, data, err
@@ -289,10 +296,10 @@ func readDiskGoMod(path, rev string) (file string, data []byte, err error) {
 // If the read fails, the caller can use
 // writeDiskCache(file, data) to write a new cache entry.
 func readDiskCache(path, rev, suffix string) (file string, data []byte, err error) {
-	if !semver.IsValid(rev) || CacheRoot == "" {
+	if !semver.IsValid(rev) || SrcMod == "" {
 		return "", nil, errNotCached
 	}
-	file = filepath.Join(CacheRoot, path, "@v", rev+"."+suffix)
+	file = filepath.Join(SrcMod, "cache/download", path, "@v", rev+"."+suffix)
 	data, err = ioutil.ReadFile(file)
 	if err != nil {
 		return file, nil, errNotCached

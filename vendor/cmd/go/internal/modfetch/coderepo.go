@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"cmd/go/internal/modconv"
 	"cmd/go/internal/modfetch/codehost"
 	"cmd/go/internal/modfile"
 	"cmd/go/internal/module"
@@ -38,10 +37,9 @@ type codeRepo struct {
 	pseudoMajor string
 }
 
-func newCodeRepo(code codehost.Repo, path string) (Repo, error) {
-	codeRoot := code.Root()
-	if !hasPathPrefix(path, codeRoot) {
-		return nil, fmt.Errorf("mismatched repo: found %s for %s", codeRoot, path)
+func newCodeRepo(code codehost.Repo, root, path string) (Repo, error) {
+	if !hasPathPrefix(path, root) {
+		return nil, fmt.Errorf("mismatched repo: found %s for %s", root, path)
 	}
 	pathPrefix, pathMajor, ok := module.SplitPathVersion(path)
 	if !ok {
@@ -61,7 +59,7 @@ func newCodeRepo(code codehost.Repo, path string) (Repo, error) {
 	//
 	// Compute codeDir = bar, the subdirectory within the repo
 	// corresponding to the module root.
-	codeDir := strings.Trim(strings.TrimPrefix(pathPrefix, codeRoot), "/")
+	codeDir := strings.Trim(strings.TrimPrefix(pathPrefix, root), "/")
 	if strings.HasPrefix(path, "gopkg.in/") {
 		// But gopkg.in is a special legacy case, in which pathPrefix does not start with codeRoot.
 		// For example we might have:
@@ -77,7 +75,7 @@ func newCodeRepo(code codehost.Repo, path string) (Repo, error) {
 	r := &codeRepo{
 		modPath:     path,
 		code:        code,
-		codeRoot:    codeRoot,
+		codeRoot:    root,
 		codeDir:     codeDir,
 		pathPrefix:  pathPrefix,
 		pathMajor:   pathMajor,
@@ -269,41 +267,15 @@ func (r *codeRepo) GoMod(version string) (data []byte, err error) {
 	return data, nil
 }
 
-var altConfigs = []string{
-	"Gopkg.lock",
-
-	"GLOCKFILE",
-	"Godeps/Godeps.json",
-	"dependencies.tsv",
-	"glide.lock",
-	"vendor.conf",
-	"vendor.yml",
-	"vendor/manifest",
-	"vendor/vendor.json",
-}
-
 func (r *codeRepo) legacyGoMod(rev, dir string) []byte {
-	mf := new(modfile.File)
-	mf.AddModuleStmt(r.modPath)
-	for _, file := range altConfigs {
-		data, err := r.code.ReadFile(rev, path.Join(dir, file), codehost.MaxGoMod)
-		if err != nil {
-			continue
-		}
-		convert := modconv.Converters[file]
-		if convert == nil {
-			continue
-		}
-		if err := ConvertLegacyConfig(mf, file, data); err != nil {
-			continue
-		}
-		break
-	}
-	data, err := mf.Format()
-	if err != nil {
-		return []byte(fmt.Sprintf("%s\nmodule %q\n", modconv.Prefix, r.modPath))
-	}
-	return append([]byte(modconv.Prefix+"\n"), data...)
+	// We used to try to build a go.mod reflecting pre-existing
+	// package management metadata files, but the conversion
+	// was inherently imperfect (because those files don't have
+	// exactly the same semantics as go.mod) and, when done
+	// for dependencies in the middle of a build, impossible to
+	// correct. So we stopped.
+	// Return a fake go.mod that simply declares the module path.
+	return []byte(fmt.Sprintf("module %s\n", modfile.AutoQuote(r.modPath)))
 }
 
 func (r *codeRepo) modPrefix(rev string) string {
@@ -416,6 +388,11 @@ func (r *codeRepo) Zip(version string, tmpdir string) (tmpfile string, err error
 		}
 		name := strings.TrimPrefix(zf.Name, topPrefix)
 		if !strings.HasPrefix(name, subdir) {
+			continue
+		}
+		if name == ".hg_archival.txt" {
+			// Inserted by hg archive.
+			// Not correct to drop from other version control systems, but too bad.
 			continue
 		}
 		name = strings.TrimPrefix(name, subdir)

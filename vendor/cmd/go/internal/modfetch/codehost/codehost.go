@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cmd/go/internal/cfg"
@@ -34,9 +35,6 @@ const (
 // remote version control servers, and code hosting sites.
 // A Repo must be safe for simultaneous use by multiple goroutines.
 type Repo interface {
-	// Root returns the import path of the root directory of the repository.
-	Root() string
-
 	// List lists all tags with the given prefix.
 	Tags(prefix string) (tags []string, err error)
 
@@ -117,14 +115,12 @@ func WorkDir(typ, name string) (string, error) {
 	key := typ + ":" + name
 	dir := filepath.Join(WorkRoot, fmt.Sprintf("%x", sha256.Sum256([]byte(key))))
 	data, err := ioutil.ReadFile(dir + ".info")
-	if err == nil {
+	info, err2 := os.Stat(dir)
+	if err == nil && err2 == nil && info.IsDir() {
+		// Info file and directory both already exist: reuse.
 		have := strings.TrimSuffix(string(data), "\n")
 		if have != key {
 			return "", fmt.Errorf("%s exists with wrong content (have %q want %q)", dir+".info", have, key)
-		}
-		_, err := os.Stat(dir)
-		if err != nil {
-			return "", fmt.Errorf("%s exists but %s does not", dir+".info", dir)
 		}
 		if cfg.BuildX {
 			fmt.Fprintf(os.Stderr, "# %s for %s %s\n", dir, typ, name)
@@ -132,6 +128,7 @@ func WorkDir(typ, name string) (string, error) {
 		return dir, nil
 	}
 
+	// Info file or directory missing. Start from scratch.
 	if cfg.BuildX {
 		fmt.Fprintf(os.Stderr, "mkdir -p %s # %s %s\n", dir, typ, name)
 	}
@@ -161,19 +158,36 @@ func (e *RunError) Error() string {
 	return text
 }
 
+var dirLock sync.Map
+
 // Run runs the command line in the given directory
 // (an empty dir means the current directory).
 // It returns the standard output and, for a non-zero exit,
 // a *RunError indicating the command, exit status, and standard error.
 // Standard error is unavailable for commands that exit successfully.
 func Run(dir string, cmdline ...interface{}) ([]byte, error) {
+	if dir != "" {
+		muIface, ok := dirLock.Load(dir)
+		if !ok {
+			muIface, _ = dirLock.LoadOrStore(dir, new(sync.Mutex))
+		}
+		mu := muIface.(*sync.Mutex)
+		mu.Lock()
+		defer mu.Unlock()
+	}
+
 	cmd := str.StringList(cmdline...)
 	if cfg.BuildX {
-		var cd string
+		var text string
 		if dir != "" {
-			cd = "cd " + dir + "; "
+			text = "cd " + dir + "; "
 		}
-		fmt.Fprintf(os.Stderr, "%s%s\n", cd, strings.Join(cmd, " "))
+		text += strings.Join(cmd, " ")
+		fmt.Fprintf(os.Stderr, "%s\n", text)
+		start := time.Now()
+		defer func() {
+			fmt.Fprintf(os.Stderr, "%.3fs # %s\n", time.Since(start).Seconds(), text)
+		}()
 	}
 	// TODO: Impose limits on command output size.
 	// TODO: Set environment to get English error messages.
