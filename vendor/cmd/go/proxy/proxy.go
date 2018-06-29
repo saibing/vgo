@@ -53,7 +53,7 @@ func (cfg *Config) Init() {
 		return len(cfg.SortKeys[i]) >= len(cfg.SortKeys[j])
 	})
 
-	//modfetch.HTTPSites = cfg.HTTPSites
+	modfetch.HTTPSites = cfg.HTTPSites
 }
 
 func (cfg *Config) String() string {
@@ -80,8 +80,8 @@ var zipMutex sync.Mutex
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	allMutex.Lock()
-	defer allMutex.Unlock()
+	//allMutex.Lock()
+	//defer allMutex.Unlock()
 
 	originURL := r.URL.Path
 	replaced := p.replace(r)
@@ -175,6 +175,9 @@ func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, 
 		err = p.fetch(url, zipHashSuffix)
 	} else if strings.HasSuffix(url, modSuffix) {
 		err = p.fetch(url, modSuffix)
+	} else {
+		p.fileHandler.ServeHTTP(w, r)
+		return
 	}
 
 	if err != nil {
@@ -456,7 +459,6 @@ func Serve(ip string, port string, cfg *Config) {
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
 	gopath := paths[0]
 	vgo.InitProxy(gopath)
-	modfetch.HTTPSites = cfg.HTTPSites
 
 	fullWebRoot = filepath.Join(gopath, webRoot)
 	vgoModRoot = filepath.Join(gopath, vgoModDir)
