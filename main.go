@@ -37,17 +37,7 @@ import (
 	"encoding/json"
 )
 
-const (
-	goproxyEnv = "GOPROXY"
-)
-
 func main() {
-	// vgo proxy不需要设置GOPROXY了，避免陷入无限递归的陷阱
-	err := os.Setenv(goproxyEnv, "")
-	if err != nil {
-		fmt.Printf("reset envirnoment variable %s failed: %v\n", goproxyEnv, err)
-	}
-
 	cmd := parseCmd()
 	if cmd.HelpFlag {
 		printUsage()

@@ -18,7 +18,7 @@ import (
 	"cmd/go/internal/semver"
 )
 
-var proxyURL = os.Getenv("GOPROXY")
+var proxyURL = "" //os.Getenv("GOPROXY")
 
 func lookupProxy(path string) (Repo, error) {
 	u, err := url.Parse(proxyURL)

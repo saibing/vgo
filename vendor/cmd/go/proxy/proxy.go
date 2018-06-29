@@ -80,8 +80,8 @@ var zipMutex sync.Mutex
 
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//allMutex.Lock()
-	//defer allMutex.Unlock()
+	allMutex.Lock()
+	defer allMutex.Unlock()
 
 	originURL := r.URL.Path
 	replaced := p.replace(r)

@@ -21,7 +21,7 @@ import (
 	"strings"
 )
 
-const traceRepo = true // trace all repo actions, for debugging
+const traceRepo = false // trace all repo actions, for debugging
 
 // A Repo represents a repository storing all versions of a single module.
 // It must be safe for simultaneous use by multiple goroutines.
