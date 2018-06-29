@@ -18,9 +18,10 @@ import (
 	"cmd/go/internal/par"
 	"cmd/go/internal/semver"
 	web "cmd/go/internal/web"
+	"strings"
 )
 
-const traceRepo = false // trace all repo actions, for debugging
+const traceRepo = true // trace all repo actions, for debugging
 
 // A Repo represents a repository storing all versions of a single module.
 // It must be safe for simultaneous use by multiple goroutines.
@@ -203,6 +204,18 @@ func Lookup(path string) (Repo, error) {
 	return c.r, c.err
 }
 
+var HTTPSites []string
+
+func getSecurityMode(path string) web.SecurityMode {
+	for _, h := range HTTPSites {
+		if strings.HasPrefix(path, h) {
+			return web.Insecure
+		}
+	}
+
+	return web.Secure
+}
+
 // lookup returns the module with the given module path.
 func lookup(path string) (r Repo, err error) {
 	if cfg.BuildGetmode != "" {
@@ -212,7 +225,7 @@ func lookup(path string) (r Repo, err error) {
 		return lookupProxy(path)
 	}
 
-	rr, err := get.RepoRootForImportPath(path, get.PreferMod, web.Secure)
+	rr, err := get.RepoRootForImportPath(path, get.PreferMod, getSecurityMode(path))
 	if err != nil {
 		// We don't know where to find code for a module with this path.
 		return nil, err

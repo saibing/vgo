@@ -52,7 +52,7 @@ func (cfg *Config) Init() {
 		return len(cfg.SortKeys[i]) >= len(cfg.SortKeys[j])
 	})
 
-	modfetch.HTTPSites = cfg.HTTPSites
+	//modfetch.HTTPSites = cfg.HTTPSites
 }
 
 func (cfg *Config) String() string {
@@ -455,6 +455,7 @@ func Serve(ip string, port string, cfg *Config) {
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
 	gopath := paths[0]
 	vgo.InitProxy(gopath)
+	modfetch.HTTPSites = cfg.HTTPSites
 
 	vgoRoot = filepath.Join(gopath, vgoCacheDir)
 	vgoModRoot = filepath.Join(gopath, vgoModDir)
