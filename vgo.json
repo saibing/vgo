@@ -6,6 +6,7 @@
     "rnd-github.huawei.com"
   ],
   "replace": {
+    "golang.org/x/crypto": "github.com/golang/crypto",
     "golang.org/x/sys": "github.com/golang/sys",
     "golang.org/x/sync": "github.com/golang/sync",
     "golang.org/x/text": "github.com/golang/text",
