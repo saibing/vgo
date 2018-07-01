@@ -6,6 +6,7 @@
     "rnd-github.huawei.com"
   ],
   "replace": {
+    "google.golang.org/appengine": "github.com/golang/appengine",
     "golang.org/x/crypto": "github.com/golang/crypto",
     "golang.org/x/sys": "github.com/golang/sys",
     "golang.org/x/sync": "github.com/golang/sync",
