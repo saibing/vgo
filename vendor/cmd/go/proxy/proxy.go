@@ -10,7 +10,7 @@ import (
 	"bytes"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
-	"cmd/go/internal/vgo"
+	"cmd/go/internal/modload"
 	"encoding/json"
 	"io/ioutil"
 	"os/exec"
@@ -136,17 +136,17 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 
 	revInfo, err := vgo.Module(mod, ver)
 	if err != nil {
-		logError("vgo: %v", err)
+		logError("go: %v", err)
 		w.WriteHeader(404)
 		w.Write([]byte(err.Error()))
 		return
 	}
 
-	logInfo("vgo: the latest version: %v", *revInfo)
+	logInfo("go: the latest version: %v", *revInfo)
 
 	data, err := json.Marshal(revInfo)
 	if err != nil {
-		logError("vgo: %v", err)
+		logError("go: %v", err)
 		w.WriteHeader(404)
 		w.Write([]byte(err.Error()))
 		return
@@ -164,7 +164,7 @@ func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, 
 		return
 	}
 
-	logInfo("vgo: fetch file from remote host: %s", url)
+	logInfo("go: fetch file from remote host: %s", url)
 
 	var err error
 	if strings.HasSuffix(url, infoSuffix) {
@@ -181,7 +181,7 @@ func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, 
 	}
 
 	if err != nil {
-		write404Error("vgo: fetch file failed %s", w, err)
+		write404Error("go: fetch file failed %s", w, err)
 		return
 	}
 
@@ -221,20 +221,20 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 
 	originPath := filepath.Join(fullWebRoot, originURL)
 	r.URL.Path = originURL
-	logInfo("vgo: download zip file: %s", originPath)
+	logInfo("go: download zip file: %s", originPath)
 	if pathExist(originPath) {
-		logInfo("vgo: zip file %s already exist", originPath)
+		logInfo("go: zip file %s already exist", originPath)
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
 
-	logInfo("vgo: zip file %s does not exist", originPath)
+	logInfo("go: zip file %s does not exist", originPath)
 	targetDir := filepath.Dir(originPath)
 	if !pathExist(targetDir) {
-		logInfo("vgo: mkdir %s", targetDir)
+		logInfo("go: mkdir %s", targetDir)
 		err := os.MkdirAll(targetDir, fileMode)
 		if err != nil {
-			write404Error("vgo: read mod file parent targetDir failed %s", w, err)
+			write404Error("go: read mod file parent targetDir failed %s", w, err)
 			return
 		}
 	}
@@ -248,7 +248,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	keys := strings.Split(key, string(os.PathSeparator))
 	if len(keys) <= 1 {
 		err := fmt.Errorf("invalid module path %s", key)
-		write404Error("vgo: copy file failed: %s", w, err)
+		write404Error("go: copy file failed: %s", w, err)
 		return
 	}
 
@@ -256,7 +256,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	err := copyDir(sourceDir, copyTargetDir)
 	if err != nil {
 		removeDir(copyTargetDir)
-		write404Error("vgo: copy file failed: %s", w, err)
+		write404Error("go: copy file failed: %s", w, err)
 		return
 	}
 
@@ -264,7 +264,7 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	err = zipDir(targetDir, zipSourceDir, targetFileName)
 	if err != nil {
 		removeFile(filepath.Join(targetDir, targetFileName))
-		write404Error("vgo: zip file failed: %s", w, err)
+		write404Error("go: zip file failed: %s", w, err)
 		return
 	}
 
@@ -278,12 +278,12 @@ const (
 )
 
 func removeDir(dir string) error {
-	logInfo("vgo: remove dir %s", dir)
+	logInfo("go: remove dir %s", dir)
 	return os.RemoveAll(dir)
 }
 
 func removeFile(filePath string) error {
-	logInfo("vgo: remove file %s", filePath)
+	logInfo("go: remove file %s", filePath)
 	return os.Remove(filePath)
 }
 
@@ -292,7 +292,7 @@ func copyDir(source string, target string) error {
 		return nil
 	}
 
-	logInfo("vgo: mkdir %s", target)
+	logInfo("go: mkdir %s", target)
 	err := os.MkdirAll(target, fileMode)
 	if err != nil {
 		return err
@@ -303,7 +303,7 @@ func copyDir(source string, target string) error {
 }
 
 func execShell(s string) error {
-	logInfo("vgo: %s", s)
+	logInfo("go: %s", s)
 
 	cmd := exec.Command("/bin/bash", "-c", s)
 	var out bytes.Buffer
@@ -312,7 +312,7 @@ func execShell(s string) error {
 	if err != nil {
 		return err
 	}
-	logInfo("vgo: %s", out.String())
+	logInfo("go: %s", out.String())
 	return nil
 }
 
@@ -328,9 +328,9 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	fullPath := filepath.Join(fullWebRoot, r.URL.Path)
 	originPath := filepath.Join(fullWebRoot, originURL)
 	r.URL.Path = originURL
-	logInfo("vgo: download mod file: %s", originPath)
+	logInfo("go: download mod file: %s", originPath)
 	if pathExist(originPath) {
-		logInfo("vgo: mod file %s already exist", originPath)
+		logInfo("go: mod file %s already exist", originPath)
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
@@ -339,15 +339,15 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	if !pathExist(dir) {
 		err := os.MkdirAll(dir, fileMode)
 		if err != nil {
-			write404Error("vgo: read mod file parent dir failed %s", w, err)
+			write404Error("go: read mod file parent dir failed %s", w, err)
 			return
 		}
 	}
 
-	logInfo("vgo: create mod file: %s", originPath)
+	logInfo("go: create mod file: %s", originPath)
 	src, err := ioutil.ReadFile(fullPath)
 	if err != nil {
-		write404Error("vgo: read mod file failed %s", w, err)
+		write404Error("go: read mod file failed %s", w, err)
 		return
 	}
 
@@ -355,7 +355,7 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	newContent := bytes.Replace(src, []byte("module "+v), []byte("module "+k), -1)
 	err = ioutil.WriteFile(originPath, []byte(newContent), fileMode)
 	if err != nil {
-		write404Error("vgo: create mod file failed: %s", w, err)
+		write404Error("go: create mod file failed: %s", w, err)
 		return
 	}
 
@@ -391,9 +391,9 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 func zipFetch(mod string, ver string) (string, error) {
 	dir, err := vgo.Fetch(mod, ver)
 	if err != nil {
-		logError("vgo: download zip file failed: %v", err)
+		logError("go: download zip file failed: %v", err)
 	} else {
-		logInfo("vgo: download zip file into dir %s", dir)
+		logInfo("go: download zip file into dir %s", dir)
 	}
 	return dir, err
 }
@@ -401,9 +401,9 @@ func zipFetch(mod string, ver string) (string, error) {
 func listVersions(mod string) ([]string, error) {
 	versions, err := vgo.Versions(mod)
 	if err != nil {
-		logError("vgo: list version failed: %v", err)
+		logError("go: list version failed: %v", err)
 	} else {
-		logInfo("vgo: version list: %v", versions)
+		logInfo("go: version list: %v", versions)
 	}
 
 	return versions, err
@@ -412,9 +412,9 @@ func listVersions(mod string) ([]string, error) {
 func infoQuery(mod string, ver string) ([]module.Version, error) {
 	list, err := vgo.Query(mod, ver)
 	if err != nil {
-		logError("vgo: query %s/%s module info failed: %v", mod, ver, err)
+		logError("go: query %s/%s module info failed: %v", mod, ver, err)
 	} else {
-		logInfo("vgo: %s/%s module info list: %v", mod, ver, list)
+		logInfo("go: %s/%s module info list: %v", mod, ver, list)
 	}
 	return list, err
 }
@@ -458,7 +458,7 @@ func Serve(ip string, port string, cfg *Config) {
 
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
 	gopath := paths[0]
-	vgo.InitProxy(gopath)
+	modload.InitProxy(gopath)
 
 	fullWebRoot = filepath.Join(gopath, webRoot)
 	vgoModRoot = filepath.Join(gopath, vgoModDir)

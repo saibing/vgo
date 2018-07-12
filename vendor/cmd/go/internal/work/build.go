@@ -89,7 +89,7 @@ and test commands:
 	-gcflags '[pattern=]arg list'
 		arguments to pass on each go tool compile invocation.
 	-getmode mode
-		module download mode to use. See 'go help module' for more.
+		module download mode to use. See 'go help modules' for more.
 	-installsuffix suffix
 		a suffix to use in the name of the package installation directory,
 		in order to keep output separate from default builds.
@@ -282,16 +282,16 @@ var RuntimeVersion = runtimeVersion
 func getRuntimeVersion() string {
 	data, err := ioutil.ReadFile(filepath.Join(cfg.GOROOT, "src/runtime/internal/sys/zversion.go"))
 	if err != nil {
-		base.Fatalf("vgo: %v", err)
+		base.Fatalf("go: %v", err)
 	}
 	i := bytes.Index(data, []byte("TheVersion = `"))
 	if i < 0 {
-		base.Fatalf("vgo: cannot find TheVersion")
+		base.Fatalf("go: cannot find TheVersion")
 	}
 	data = data[i+len("TheVersion = `"):]
 	j := bytes.IndexByte(data, '`')
 	if j < 0 {
-		base.Fatalf("vgo: cannot find TheVersion")
+		base.Fatalf("go: cannot find TheVersion")
 	}
 	return string(data[:j])
 }
@@ -459,10 +459,18 @@ func InstallPackages(args []string) {
 	}
 
 	pkgs := omitTestOnly(pkgsFilter(load.PackagesForBuild(args)))
-
 	for _, p := range pkgs {
-		if p.Target == "" && (!p.Standard || p.ImportPath != "unsafe") {
+		if p.Target == "" {
 			switch {
+			case p.Standard && p.ImportPath == "unsafe":
+				// unsafe is a built-in package, has no target
+			case p.Name != "main" && p.Internal.Local && p.ConflictDir == "":
+				// Non-executables outside GOPATH need not have a target:
+				// we can use the cache to hold the built package archive for use in future builds.
+				// The ones inside GOPATH should have a target (in GOPATH/pkg)
+				// or else something is wrong and worth reporting (like a ConflictDir).
+			case p.Name != "main" && p.Module != nil:
+				// Non-executables have no target (except the cache) when building with modules.
 			case p.Internal.GobinSubdir:
 				base.Errorf("go %s: cannot install cross-compiled binaries when GOBIN is set", cfg.CmdName)
 			case p.Internal.CmdlineFiles:

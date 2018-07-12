@@ -19,7 +19,7 @@ import (
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
-	"cmd/go/internal/vgo"
+	"cmd/go/internal/modload"
 	"cmd/go/internal/work"
 )
 
@@ -195,10 +195,12 @@ applied to a Go struct, but now a Module struct:
     type Module struct {
         Path     string       // module path
         Version  string       // module version
+        Versions []string     // available module versions (with -versions)
         Replace  *Module      // replaced by this module
         Time     *time.Time   // time version was created
         Update   *Module      // available update, if any (with -u)
         Main     bool         // is this the main module?
+        Indirect bool         // is this module only an indirect dependency of main module?
         Dir      string       // directory holding files for this module, if any
         Error    *ModuleError // error loading module
     }
@@ -239,6 +241,12 @@ For example, 'go list -m -u all' might print:
 
 (For tools, 'go list -m -u -json all' may be more convenient to parse.)
 
+The -versions flag causes list to set the Module's Versions field
+to a list of all known versions of that module, ordered according
+to semantic versioning, earliest to latest. The flag also changes
+the default output format to display the module path followed by the
+space-separated version list.
+
 The arguments to list -m are interpreted as a list of modules, not packages.
 The main module is the module containing the current directory.
 The active modules are the main module and its dependencies.
@@ -251,7 +259,7 @@ A pattern containing "..." specifies the active modules whose
 module paths match the pattern.
 A query of the form path@version specifies the result of that query,
 which is not limited to active modules.
-See 'go help modules' for more about patterns and queries.
+See 'go help module' for more about module queries.
 
 The template function "module" takes a single string argument
 that must be a module path or query and returns the specified
@@ -272,15 +280,16 @@ func init() {
 }
 
 var (
-	listCgo    = CmdList.Flag.Bool("cgo", false, "")
-	listDeps   = CmdList.Flag.Bool("deps", false, "")
-	listE      = CmdList.Flag.Bool("e", false, "")
-	listExport = CmdList.Flag.Bool("export", false, "")
-	listFmt    = CmdList.Flag.String("f", "", "")
-	listJson   = CmdList.Flag.Bool("json", false, "")
-	listM      = CmdList.Flag.Bool("m", false, "")
-	listU      = CmdList.Flag.Bool("u", false, "")
-	listTest   = CmdList.Flag.Bool("test", false, "")
+	listCgo      = CmdList.Flag.Bool("cgo", false, "")
+	listDeps     = CmdList.Flag.Bool("deps", false, "")
+	listE        = CmdList.Flag.Bool("e", false, "")
+	listExport   = CmdList.Flag.Bool("export", false, "")
+	listFmt      = CmdList.Flag.String("f", "", "")
+	listJson     = CmdList.Flag.Bool("json", false, "")
+	listM        = CmdList.Flag.Bool("m", false, "")
+	listU        = CmdList.Flag.Bool("u", false, "")
+	listTest     = CmdList.Flag.Bool("test", false, "")
+	listVersions = CmdList.Flag.Bool("versions", false, "")
 )
 
 var nl = []byte{'\n'}
@@ -293,6 +302,9 @@ func runList(cmd *base.Command, args []string) {
 	if *listFmt == "" {
 		if *listM {
 			*listFmt = "{{.String}}"
+			if *listVersions {
+				*listFmt = `{{.Path}}{{range .Versions}} {{.}}{{end}}`
+			}
 		} else {
 			*listFmt = "{{.ImportPath}}"
 		}
@@ -320,7 +332,7 @@ func runList(cmd *base.Command, args []string) {
 		fm := template.FuncMap{
 			"join":    strings.Join,
 			"context": context,
-			"module":  vgo.ModuleInfo,
+			"module":  modload.ModuleInfo,
 		}
 		tmpl, err := template.New("main").Funcs(fm).Parse(*listFmt)
 		if err != nil {
@@ -346,10 +358,6 @@ func runList(cmd *base.Command, args []string) {
 			// TODO(rsc): Could make this mean something with -m.
 			base.Fatalf("go list -deps cannot be used with -m")
 		}
-		if *listE {
-			// TODO(rsc): Could make this mean something with -m.
-			base.Fatalf("go list -e cannot be used with -m")
-		}
 		if *listExport {
 			base.Fatalf("go list -export cannot be used with -m")
 		}
@@ -357,16 +365,19 @@ func runList(cmd *base.Command, args []string) {
 			base.Fatalf("go list -test cannot be used with -m")
 		}
 
-		if vgo.Init(); !vgo.Enabled() {
+		if modload.Init(); !modload.Enabled() {
 			base.Fatalf("go list -m: not using modules")
 		}
-		vgo.LoadBuildList()
+		modload.LoadBuildList()
 
-		mods := vgo.ListModules(args)
-		if *listU {
+		mods := modload.ListModules(args, *listU, *listVersions)
+		if !*listE {
 			for _, m := range mods {
-				vgo.AddUpdate(m)
+				if m.Error != nil {
+					base.Errorf("go list -m %s: %v", m.Path, m.Error.Err)
+				}
 			}
+			base.ExitIfErrors()
 		}
 		for _, m := range mods {
 			do(m)
@@ -377,6 +388,9 @@ func runList(cmd *base.Command, args []string) {
 	// Package mode (not -m).
 	if *listU {
 		base.Fatalf("go list -u can only be used with -m")
+	}
+	if *listVersions {
+		base.Fatalf("go list -versions can only be used with -m")
 	}
 
 	var pkgs []*load.Package

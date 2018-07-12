@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package vgo
+package modload
 
 import (
 	"bytes"
 	"cmd/go/internal/base"
+	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modconv"
@@ -17,8 +18,8 @@ import (
 	"cmd/go/internal/mvs"
 	"cmd/go/internal/search"
 	"cmd/go/internal/semver"
+	"cmd/go/internal/str"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -30,10 +31,10 @@ import (
 )
 
 var (
-	cwd         string
-	enabled     = MustBeVgo
-	MustBeVgo   = mustBeVgo()
-	initialized bool
+	cwd            string
+	enabled        = MustUseModules
+	MustUseModules = mustUseModules()
+	initialized    bool
 
 	ModRoot  string
 	modFile  *modfile.File
@@ -41,17 +42,10 @@ var (
 	Target   module.Version
 
 	gopath string
-	SrcMod string // GOPATH/src/mod directory where versioned cache lives
 
 	CmdModInit   bool   // go mod -init flag
 	CmdModModule string // go mod -module flag
-
 )
-
-// TargetPackages returns the list of packages in the target (top-level) module.
-func TargetPackages() []string {
-	return matchPackages("ALL", []module.Version{Target})
-}
 
 // ModFile returns the parsed go.mod file.
 //
@@ -67,19 +61,15 @@ func ModFile() *modfile.File {
 
 func BinDir() string {
 	if !Enabled() {
-		panic("vgo.Bin")
+		panic("modload.BinDir")
 	}
 	return filepath.Join(gopath, "bin")
 }
 
-func init() {
-	flag.BoolVar(&MustBeVgo, "vgo", MustBeVgo, "require use of modules")
-}
-
-// mustBeVgo reports whether we are invoked as vgo
+// mustUseModules reports whether we are invoked as vgo
 // (as opposed to go).
 // If so, we only support builds with go.mod files.
-func mustBeVgo() bool {
+func mustUseModules() bool {
 	name := os.Args[0]
 	name = name[strings.LastIndex(name, "/")+1:]
 	name = name[strings.LastIndex(name, `\`)+1:]
@@ -92,10 +82,23 @@ func Init() {
 	}
 	initialized = true
 
-	// If this is testgo - the test binary during cmd/go tests - then
-	// do not let it look for a go.mod. Only use vgo support if the
-	// global -vgo flag has been passed on the command line.
-	if base := filepath.Base(os.Args[0]); (base == "testgo" || base == "testgo.exe") && !MustBeVgo {
+	env := os.Getenv("GO111MODULE")
+	switch env {
+	default:
+		base.Fatalf("go: unknown environment setting GO111MODULE=%s", env)
+	case "", "auto":
+		// leave MustUseModules alone
+	case "on":
+		MustUseModules = true
+	case "off":
+		if !MustUseModules {
+			return
+		}
+	}
+
+	// If this is testgo - the test binary during cmd/go tests -
+	// then do not let it look for a go.mod unless GO111MODULE has an explicit setting.
+	if base := filepath.Base(os.Args[0]); (base == "testgo" || base == "testgo.exe") && env == "" {
 		return
 	}
 
@@ -136,32 +139,56 @@ func Init() {
 		// Running 'go mod -init': go.mod will be created in current directory.
 		ModRoot = cwd
 	} else {
-		root, _ := FindModuleRoot(cwd, "", MustBeVgo)
+		inGOPATH := false
+		for _, gopath := range filepath.SplitList(cfg.BuildContext.GOPATH) {
+			if gopath == "" {
+				continue
+			}
+			if str.HasFilePathPrefix(cwd, filepath.Join(gopath, "src")) {
+				inGOPATH = true
+				break
+			}
+		}
+		if inGOPATH {
+			if !MustUseModules {
+				// No automatic enabling in GOPATH.
+				return
+			}
+		}
+		root, _ := FindModuleRoot(cwd, "", MustUseModules)
 		if root == "" {
 			// If invoked as vgo, insist on a mod file.
-			if MustBeVgo {
-				base.Fatalf("cannot determine module root; please create a go.mod file there")
+			if MustUseModules {
+				base.Fatalf("go: cannot find main module root; see 'go help modules'")
 			}
 			return
 		}
+
 		ModRoot = root
 	}
 
+	if c := cache.Default(); c == nil {
+		// With modules, there are no install locations for packages
+		// other than the build cache.
+		base.Fatalf("go: cannot use modules with build cache disabled")
+	}
+
+	cfg.ModulesEnabled = true
 	enabled = true
-	load.VgoBinDir = BinDir
-	load.VgoLookup = Lookup
-	load.VgoPackageModuleInfo = PackageModuleInfo
-	load.VgoImportPaths = ImportPaths
-	load.VgoPackageBuildInfo = PackageBuildInfo
-	load.VgoModInfoProg = ModInfoProg
-	load.VgoAddImports = AddImports
+	load.ModBinDir = BinDir
+	load.ModLookup = Lookup
+	load.ModPackageModuleInfo = PackageModuleInfo
+	load.ModImportPaths = ImportPaths
+	load.ModPackageBuildInfo = PackageBuildInfo
+	load.ModInfoProg = ModInfoProg
+	load.ModImportFromFiles = ImportFromFiles
 
 	search.SetModRoot(ModRoot)
 }
 
 func Enabled() bool {
 	if !initialized {
-		panic("vgo: Enabled called before Init")
+		panic("go: Enabled called before Init")
 	}
 	return enabled
 }
@@ -188,21 +215,22 @@ func InitMod() {
 	}
 
 	srcV := filepath.Join(list[0], "src/v")
-	SrcMod = filepath.Join(list[0], "src/mod")
+	srcMod := filepath.Join(list[0], "src/mod")
 	infoV, errV := os.Stat(srcV)
-	_, errMod := os.Stat(SrcMod)
+	_, errMod := os.Stat(srcMod)
 	if errV == nil && infoV.IsDir() && errMod != nil && os.IsNotExist(errMod) {
-		os.Rename(srcV, SrcMod)
+		os.Rename(srcV, srcMod)
 	}
 
-	modfetch.SrcMod = SrcMod
+	modfetch.SrcMod = srcMod
 	modfetch.GoSumFile = filepath.Join(ModRoot, "go.sum")
-	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcs")
+	codehost.WorkRoot = filepath.Join(srcMod, "cache/vcs")
 
 	if CmdModInit {
 		// Running go mod -init: do legacy module conversion
-		// (go.mod does not exist yet).
+		// (go.mod does not exist yet, and it's not our job to write it).
 		legacyModInit()
+		modFileToBuildList()
 		return
 	}
 
@@ -211,15 +239,17 @@ func InitMod() {
 	if err != nil {
 		if os.IsNotExist(err) {
 			legacyModInit()
+			modFileToBuildList()
+			WriteGoMod()
 			return
 		}
-		base.Fatalf("vgo: %v", err)
+		base.Fatalf("go: %v", err)
 	}
 
 	f, err := modfile.Parse(gomod, data, fixVersion)
 	if err != nil {
 		// Errors returned by modfile.Parse begin with file:line.
-		base.Fatalf("vgo: errors parsing go.mod:\n%s\n", err)
+		base.Fatalf("go: errors parsing go.mod:\n%s\n", err)
 	}
 	modFile = f
 
@@ -227,7 +257,7 @@ func InitMod() {
 		// Empty mod file. Must add module path.
 		path, err := FindModulePath(ModRoot)
 		if err != nil {
-			base.Fatalf("vgo: %v", err)
+			base.Fatalf("go: %v", err)
 		}
 		f.AddModuleStmt(path)
 	}
@@ -242,11 +272,22 @@ func InitMod() {
 	for _, x := range f.Exclude {
 		excluded[x.Mod] = true
 	}
-	Target = f.Module.Mod
+	modFileToBuildList()
 	WriteGoMod()
 }
 
-func allowed(m module.Version) bool {
+// modFileToBuildList initializes buildList from the modFile.
+func modFileToBuildList() {
+	Target = modFile.Module.Mod
+	list := []module.Version{Target}
+	for _, r := range modFile.Require {
+		list = append(list, r.Mod)
+	}
+	buildList = list
+}
+
+// Allowed reports whether module m is allowed (not excluded) by the main module's go.mod.
+func Allowed(m module.Version) bool {
 	return !excluded[m]
 }
 
@@ -254,14 +295,13 @@ func legacyModInit() {
 	if modFile == nil {
 		path, err := FindModulePath(ModRoot)
 		if err != nil {
-			base.Fatalf("vgo: %v", err)
+			base.Fatalf("go: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "vgo: creating new go.mod: module %s\n", path)
+		fmt.Fprintf(os.Stderr, "go: creating new go.mod: module %s\n", path)
 		modFile = new(modfile.File)
 		modFile.AddModuleStmt(path)
 	}
 
-	Target = modFile.Module.Mod
 	for _, name := range altConfigs {
 		cfg := filepath.Join(ModRoot, name)
 		data, err := ioutil.ReadFile(cfg)
@@ -270,14 +310,14 @@ func legacyModInit() {
 			if convert == nil {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "vgo: copying requirements from %s\n", cfg)
+			fmt.Fprintf(os.Stderr, "go: copying requirements from %s\n", base.ShortPath(cfg))
 			cfg = filepath.ToSlash(cfg)
 			if err := modconv.ConvertLegacyConfig(modFile, cfg, data); err != nil {
-				base.Fatalf("vgo: %v", err)
+				base.Fatalf("go: %v", err)
 			}
 			if len(modFile.Syntax.Stmt) == 1 {
-				// Add comment to prevent vgo from re-converting every time it runs.
-				modFile.AddComment("// vgo: no requirements found in " + name)
+				// Add comment to avoid re-converting every time it runs.
+				modFile.AddComment("// go: no requirements found in " + name)
 			}
 			return
 		}
@@ -349,12 +389,6 @@ func FindModulePath(dir string) (string, error) {
 		// Running go mod -init -module=x/y/z; return x/y/z.
 		return CmdModModule, nil
 	}
-	for _, gpdir := range filepath.SplitList(cfg.BuildContext.GOPATH) {
-		src := filepath.Join(gpdir, "src") + string(filepath.Separator)
-		if strings.HasPrefix(dir, src) {
-			return filepath.ToSlash(dir[len(src):]), nil
-		}
-	}
 
 	// Cast about for import comments,
 	// first in top-level directory, then in subdirectories.
@@ -381,10 +415,10 @@ func FindModulePath(dir string) (string, error) {
 
 	// Look for Godeps.json declaring import path.
 	data, _ := ioutil.ReadFile(filepath.Join(dir, "Godeps/Godeps.json"))
-	var cfg struct{ ImportPath string }
-	json.Unmarshal(data, &cfg)
-	if cfg.ImportPath != "" {
-		return cfg.ImportPath, nil
+	var cfg1 struct{ ImportPath string }
+	json.Unmarshal(data, &cfg1)
+	if cfg1.ImportPath != "" {
+		return cfg1.ImportPath, nil
 	}
 
 	// Look for vendor.json declaring import path.
@@ -393,6 +427,14 @@ func FindModulePath(dir string) (string, error) {
 	json.Unmarshal(data, &cfg2)
 	if cfg2.RootPath != "" {
 		return cfg2.RootPath, nil
+	}
+
+	// Look for path in GOPATH.
+	for _, gpdir := range filepath.SplitList(cfg.BuildContext.GOPATH) {
+		src := filepath.Join(gpdir, "src") + string(filepath.Separator)
+		if strings.HasPrefix(dir, src) {
+			return filepath.ToSlash(dir[len(src):]), nil
+		}
 	}
 
 	// Look for .git/config with github origin as last resort.
@@ -429,12 +471,25 @@ func findImportComment(file string) string {
 func WriteGoMod() {
 	modfetch.WriteGoSum()
 
-	if buildList != nil {
-		min, err := mvs.Req(Target, buildList, newReqs())
-		if err != nil {
-			base.Fatalf("vgo: %v", err)
+	if loaded != nil {
+		var direct []string
+		for _, m := range buildList[1:] {
+			if loaded.direct[m.Path] {
+				direct = append(direct, m.Path)
+			}
 		}
-		modFile.SetRequire(min)
+		min, err := mvs.Req(Target, buildList, direct, Reqs())
+		if err != nil {
+			base.Fatalf("go: %v", err)
+		}
+		var list []*modfile.Require
+		for _, m := range min {
+			list = append(list, &modfile.Require{
+				Mod:      m,
+				Indirect: !loaded.direct[m.Path],
+			})
+		}
+		modFile.SetRequire(list)
 	}
 
 	file := filepath.Join(ModRoot, "go.mod")
@@ -442,13 +497,13 @@ func WriteGoMod() {
 	modFile.Cleanup() // clean file after edits
 	new, err := modFile.Format()
 	if err != nil {
-		base.Fatalf("vgo: %v", err)
+		base.Fatalf("go: %v", err)
 	}
 	if bytes.Equal(old, new) {
 		return
 	}
 	if err := ioutil.WriteFile(file, new, 0666); err != nil {
-		base.Fatalf("vgo: %v", err)
+		base.Fatalf("go: %v", err)
 	}
 }
 
@@ -469,7 +524,7 @@ func fixVersion(path, vers string) (string, error) {
 		return vers, nil
 	}
 
-	info, err := modfetch.Query(path, vers, nil)
+	info, err := Query(path, vers, nil)
 	if err != nil {
 		return "", err
 	}

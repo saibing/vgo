@@ -14,35 +14,32 @@ import (
 	"strings"
 
 	"cmd/go/internal/base"
+	"cmd/go/internal/modload"
 	"cmd/go/internal/module"
-	"cmd/go/internal/vgo"
 )
 
-var copiedDir map[string]bool
-
 func runVendor() {
-	pkgs := vgo.ImportPaths([]string{"ALL"})
+	pkgs := modload.LoadVendor()
 
-	vdir := filepath.Join(vgo.ModRoot, "vendor")
+	vdir := filepath.Join(modload.ModRoot, "vendor")
 	if err := os.RemoveAll(vdir); err != nil {
-		base.Fatalf("vgo vendor: %v", err)
+		base.Fatalf("go vendor: %v", err)
 	}
 
 	modpkgs := make(map[module.Version][]string)
 	for _, pkg := range pkgs {
-		m := vgo.PackageModule(pkg)
-		if m == vgo.Target {
+		m := modload.PackageModule(pkg)
+		if m == modload.Target {
 			continue
 		}
 		modpkgs[m] = append(modpkgs[m], pkg)
 	}
 
 	var buf bytes.Buffer
-	copiedDir = make(map[string]bool)
-	for _, m := range vgo.BuildList()[1:] {
+	for _, m := range modload.BuildList()[1:] {
 		if pkgs := modpkgs[m]; len(pkgs) > 0 {
 			repl := ""
-			if r := vgo.Replacement(m); r.Path != "" {
+			if r := modload.Replacement(m); r.Path != "" {
 				repl = " => " + r.Path
 				if r.Version != "" {
 					repl += " " + r.Version
@@ -62,47 +59,48 @@ func runVendor() {
 		}
 	}
 	if buf.Len() == 0 {
-		fmt.Fprintf(os.Stderr, "vgo: no dependencies to vendor\n")
+		fmt.Fprintf(os.Stderr, "go: no dependencies to vendor\n")
 		return
 	}
-	if err := ioutil.WriteFile(filepath.Join(vdir, "vgo.list"), buf.Bytes(), 0666); err != nil {
-		base.Fatalf("vgo vendor: %v", err)
+	if err := ioutil.WriteFile(filepath.Join(vdir, "modules.txt"), buf.Bytes(), 0666); err != nil {
+		base.Fatalf("go vendor: %v", err)
 	}
 }
 
 func vendorPkg(vdir, pkg string) {
-	realPath := vgo.ImportMap(pkg)
-	if realPath != pkg && vgo.ImportMap(realPath) != "" {
+	realPath := modload.ImportMap(pkg)
+	if realPath != pkg && modload.ImportMap(realPath) != "" {
 		fmt.Fprintf(os.Stderr, "warning: %s imported as both %s and %s; making two copies.\n", realPath, realPath, pkg)
 	}
 
 	dst := filepath.Join(vdir, pkg)
-	src := vgo.PackageDir(realPath)
+	src := modload.PackageDir(realPath)
 	if src == "" {
 		fmt.Fprintf(os.Stderr, "internal error: no pkg for %s -> %s\n", pkg, realPath)
 	}
-
-	copyDir(dst, src, false)
-	if m := vgo.PackageModule(realPath); m.Path != "" {
-		copyTestdata(m.Path, realPath, dst, src)
+	copyDir(dst, src, matchNonTest)
+	if m := modload.PackageModule(realPath); m.Path != "" {
+		copyMetadata(m.Path, realPath, dst, src)
 	}
 }
 
-// Copy the testdata directories in parent directories.
-// If the package being vendored is a/b/c,
-// try to copy a/b/c/testdata, a/b/testdata and a/testdata to vendor directory,
-// up to the module root.
-func copyTestdata(modPath, pkg, dst, src string) {
-	testdata := func(dir string) string {
-		return filepath.Join(dir, "testdata")
-	}
-	for {
-		if copiedDir[dst] {
+type metakey struct {
+	modPath string
+	dst     string
+}
+
+var copiedMetadata = make(map[metakey]bool)
+
+// copyMetadata copies metadata files from parents of src to parents of dst,
+// stopping after processing the src parent for modPath.
+func copyMetadata(modPath, pkg, dst, src string) {
+	for parent := 0; ; parent++ {
+		if copiedMetadata[metakey{modPath, dst}] {
 			break
 		}
-		copiedDir[dst] = true
-		if info, err := os.Stat(testdata(src)); err == nil && info.IsDir() {
-			copyDir(testdata(dst), testdata(src), true)
+		copiedMetadata[metakey{modPath, dst}] = true
+		if parent > 0 {
+			copyDir(dst, src, matchMetadata)
 		}
 		if modPath == pkg {
 			break
@@ -113,54 +111,68 @@ func copyTestdata(modPath, pkg, dst, src string) {
 	}
 }
 
-func copyDir(dst, src string, recursive bool) {
+// metaPrefixes is the list of metadata file prefixes.
+// Vendoring copies metadata files from parents of copied directories.
+// Note that this list could be arbitrarily extended, and it is longer
+// in other tools (such as godep or dep). By using this limited set of
+// prefixes and also insisting on capitalized file names, we are trying
+// to nudge people toward more agreement on the naming
+// and also trying to avoid false positives.
+var metaPrefixes = []string{
+	"AUTHORS",
+	"CONTRIBUTORS",
+	"COPYLEFT",
+	"COPYING",
+	"COPYRIGHT",
+	"LEGAL",
+	"LICENSE",
+	"NOTICE",
+	"PATENTS",
+}
+
+// matchMetadata reports whether info is a metadata file.
+func matchMetadata(info os.FileInfo) bool {
+	name := info.Name()
+	for _, p := range metaPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchNonTest reports whether info is any non-test file (including non-Go files).
+func matchNonTest(info os.FileInfo) bool {
+	return !strings.HasSuffix(info.Name(), "_test.go")
+}
+
+// copyDir copies all regular files satisfying match(info) from src to dst.
+func copyDir(dst, src string, match func(os.FileInfo) bool) {
 	files, err := ioutil.ReadDir(src)
 	if err != nil {
-		base.Fatalf("vgo vendor: %v", err)
+		base.Fatalf("go vendor: %v", err)
 	}
 	if err := os.MkdirAll(dst, 0777); err != nil {
-		base.Fatalf("vgo vendor: %v", err)
+		base.Fatalf("go vendor: %v", err)
 	}
 	for _, file := range files {
-		if file.IsDir() {
-			if recursive || file.Name() == "testdata" {
-				copyDir(filepath.Join(dst, file.Name()), filepath.Join(src, file.Name()), true)
-			}
-			continue
-		}
-		if !file.Mode().IsRegular() {
+		if file.IsDir() || !file.Mode().IsRegular() || !match(file) {
 			continue
 		}
 		r, err := os.Open(filepath.Join(src, file.Name()))
 		if err != nil {
-			base.Fatalf("vgo vendor: %v", err)
+			base.Fatalf("go vendor: %v", err)
 		}
 		w, err := os.Create(filepath.Join(dst, file.Name()))
 		if err != nil {
-			base.Fatalf("vgo vendor: %v", err)
+			base.Fatalf("go vendor: %v", err)
 		}
 		if _, err := io.Copy(w, r); err != nil {
-			base.Fatalf("vgo vendor: %v", err)
+			base.Fatalf("go vendor: %v", err)
 		}
 		r.Close()
 		if err := w.Close(); err != nil {
-			base.Fatalf("vgo vendor: %v", err)
+			base.Fatalf("go vendor: %v", err)
 		}
-	}
-}
-
-// hasPathPrefix reports whether the path s begins with the
-// elements in prefix.
-func hasPathPrefix(s, prefix string) bool {
-	switch {
-	default:
-		return false
-	case len(s) == len(prefix):
-		return s == prefix
-	case len(s) > len(prefix):
-		if prefix != "" && prefix[len(prefix)-1] == '/' {
-			return strings.HasPrefix(s, prefix)
-		}
-		return s[len(prefix)] == '/' && s[:len(prefix)] == prefix
 	}
 }

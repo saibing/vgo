@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 
+	"cmd/go/internal/base"
 	"cmd/go/internal/module"
 	"cmd/go/internal/par"
 )
@@ -40,12 +41,18 @@ type Reqs interface {
 	// and similarly v1 <= v2 can be written Max(v1, v2) == v2.
 	Max(v1, v2 string) string
 
-	// Latest returns the latest known version of the module at path
-	// (the one to use during UpgradeAll).
+	// Upgrade returns the upgraded version of m,
+	// for use during an UpgradeAll operation.
+	// If m should be kept as is, Upgrade returns m.
+	// If m is not yet used in the build, then m.Version will be "none".
+	// More typically, m.Version will be the version required
+	// by some other module in the build.
 	//
-	// Latest never returns version "none": if no module exists at the given path,
-	// it returns a non-nil error instead.
-	Latest(path string) (module.Version, error)
+	// If no module version is available for the given path,
+	// Upgrade returns a non-nil error.
+	// TODO(rsc): Upgrade must be able to return errors,
+	// but should "no latest version" just return m instead?
+	Upgrade(m module.Version) (module.Version, error)
 
 	// Previous returns the version of m.Path immediately prior to m.Version,
 	// or "none" if no such version is known.
@@ -93,11 +100,20 @@ func buildList(target module.Version, reqs Reqs, upgrade func(module.Version) mo
 		mu.Unlock()
 
 		for _, r := range required {
+			if r.Path == "" {
+				base.Errorf("Required(%v) returned zero module in list", m)
+				continue
+			}
 			work.Add(r)
 		}
 
 		if upgrade != nil {
-			work.Add(upgrade(m))
+			u := upgrade(m)
+			if u.Path == "" {
+				base.Errorf("Upgrade(%v) returned zero module", m)
+				return
+			}
+			work.Add(u)
 		}
 	})
 
@@ -136,8 +152,9 @@ func buildList(target module.Version, reqs Reqs, upgrade func(module.Version) mo
 }
 
 // Req returns the minimal requirement list for the target module
-// that results in the given build list.
-func Req(target module.Version, list []module.Version, reqs Reqs) ([]module.Version, error) {
+// that results in the given build list, with the constraint that all
+// module paths listed in base must appear in the returned list.
+func Req(target module.Version, list []module.Version, base []string, reqs Reqs) ([]module.Version, error) {
 	// Note: Not running in parallel because we assume
 	// that list came from a previous operation that paged
 	// in all the requirements, so there's no I/O to overlap now.
@@ -191,7 +208,14 @@ func Req(target module.Version, list []module.Version, reqs Reqs) ([]module.Vers
 			max[m.Path] = m.Version
 		}
 	}
+	// First walk the base modules that must be listed.
 	var min []module.Version
+	for _, path := range base {
+		m := module.Version{Path: path, Version: max[path]}
+		min = append(min, m)
+		walk(m)
+	}
+	// Now the reverse postorder to bring in anything else.
 	for i := len(postorder) - 1; i >= 0; i-- {
 		m := postorder[i]
 		if max[m.Path] != m.Version {
@@ -217,7 +241,7 @@ func UpgradeAll(target module.Version, reqs Reqs) ([]module.Version, error) {
 			return target
 		}
 
-		latest, err := reqs.Latest(m.Path)
+		latest, err := reqs.Upgrade(m)
 		if err != nil {
 			panic(err) // TODO
 		}
