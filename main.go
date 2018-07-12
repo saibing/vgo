@@ -26,7 +26,7 @@
 package main
 
 import (
-	"cmd/go/proxy"
+	"cmd/go"
 	"fmt"
 	"os"
 
@@ -60,7 +60,7 @@ func main() {
 		return
 	}
 
-	cfg := &proxy.Config{}
+	cfg := &Main.Config{}
 
 	err = json.Unmarshal(data, cfg)
 	if err != nil {
@@ -74,5 +74,5 @@ func main() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	proxy.Serve(cmd.IP, cmd.Port, cfg)
+	Main.Serve(cmd.IP, cmd.Port, cfg)
 }

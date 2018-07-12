@@ -194,10 +194,10 @@ func Enabled() bool {
 }
 
 func InitProxy(gopath string) {
-	SrcMod = filepath.Join(gopath, "src/mod")
-	modfetch.SrcMod = SrcMod
+	srcMod := filepath.Join(gopath, "src/mod")
+	modfetch.SrcMod = srcMod
 	modfetch.GoSumFile = filepath.Join(ModRoot, "go.sum")
-	codehost.WorkRoot = filepath.Join(SrcMod, "cache/vcs")
+	codehost.WorkRoot = filepath.Join(srcMod, "cache/vcs")
 }
 
 func InitMod() {

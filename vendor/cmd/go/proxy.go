@@ -1,4 +1,4 @@
-package proxy
+package Main
 
 import (
 	"fmt"
@@ -6,22 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
 	"bytes"
-	"cmd/go/internal/modfetch"
-	"cmd/go/internal/module"
-	"cmd/go/internal/modload"
 	"encoding/json"
 	"io/ioutil"
 	"os/exec"
 	"sort"
 	"sync"
+	"cmd/go/internal/modfetch"
+	"cmd/go/internal/module"
+	"cmd/go/internal/modload"
 )
 
 const (
 	goPathEnv   = "GOPATH"
 	homeEnv     = "HOME"
-	vgoCacheDir = "src/mod/cache/"
 	webRoot     = "src/mod/cache/download/"
 	vgoModDir   = "src/mod"
 )
@@ -94,7 +92,7 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.HasSuffix(url, listSuffix) {
-		listHandler(url, w, r)
+		listHandler(url, w)
 		return
 	}
 
@@ -134,7 +132,7 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 	mod := getPath(paths)
 	ver := getVersion(paths)
 
-	revInfo, err := vgo.Module(mod, ver)
+	revInfo, err := modload.ServerModule(mod, ver)
 	if err != nil {
 		logError("go: %v", err)
 		w.WriteHeader(404)
@@ -389,7 +387,7 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 }
 
 func zipFetch(mod string, ver string) (string, error) {
-	dir, err := vgo.Fetch(mod, ver)
+	dir, _, err := modload.ServerFetch(mod, ver)
 	if err != nil {
 		logError("go: download zip file failed: %v", err)
 	} else {
@@ -399,7 +397,7 @@ func zipFetch(mod string, ver string) (string, error) {
 }
 
 func listVersions(mod string) ([]string, error) {
-	versions, err := vgo.Versions(mod)
+	versions, err := modload.ServerVersions(mod)
 	if err != nil {
 		logError("go: list version failed: %v", err)
 	} else {
@@ -410,7 +408,7 @@ func listVersions(mod string) ([]string, error) {
 }
 
 func infoQuery(mod string, ver string) ([]module.Version, error) {
-	list, err := vgo.Query(mod, ver)
+	list, err := modload.ServerQuery(mod, ver)
 	if err != nil {
 		logError("go: query %s/%s module info failed: %v", mod, ver, err)
 	} else {
@@ -431,7 +429,7 @@ func getVersion(paths []string) string {
 	return ver
 }
 
-func listHandler(filePath string, w http.ResponseWriter, r *http.Request) {
+func listHandler(filePath string, w http.ResponseWriter) {
 	url := filePath
 	mod := url[1 : len(url)-len(listSuffix)]
 	versions, err := listVersions(mod)
@@ -464,8 +462,8 @@ func Serve(ip string, port string, cfg *Config) {
 	vgoModRoot = filepath.Join(gopath, vgoModDir)
 	h := newProxyHandler(fullWebRoot, cfg)
 	url := ip + ":" + port
-	logInfo("vgo config: \n%s", cfg)
-	logInfo("start vgo proxy server at %s", url)
+	logInfo("go config: \n%s", cfg)
+	logInfo("start go proxy server at %s", url)
 	err := http.ListenAndServe(url, h)
 	if err != nil {
 		logError("listen serve failed, %v", err)

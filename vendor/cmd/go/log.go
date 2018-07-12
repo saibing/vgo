@@ -1,6 +1,6 @@
 // +build !linux
 
-package proxy
+package Main
 
 import (
 	"fmt"
