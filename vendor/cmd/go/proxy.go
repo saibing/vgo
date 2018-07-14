@@ -277,11 +277,14 @@ const (
 
 func removeDir(dir string) error {
 	logInfo("go: remove dir %s", dir)
+	//os.Chmod(dir, fileMode)
+	execShell(fmt.Sprintf("chmod 755 -R %s", dir))
 	return os.RemoveAll(dir)
 }
 
 func removeFile(filePath string) error {
 	logInfo("go: remove file %s", filePath)
+	os.Chmod(filePath, fileMode)
 	return os.Remove(filePath)
 }
 
