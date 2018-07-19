@@ -81,15 +81,31 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//allMutex.Lock()
 	//defer allMutex.Unlock()
 
-	originURL := r.URL.Path
-	replaced := p.replace(r)
+	logRequest(fmt.Sprintf("GET %s from %s", r.URL.Path, r.RemoteAddr))
 
-	url := r.URL.Path
-
-	logRequest(fmt.Sprintf("GET %s from %s", url, r.RemoteAddr))
-	if replaced {
-		logRequest(fmt.Sprintf("Origin url %s", originURL))
+	url := r.URL.Path[1:]
+	i := strings.Index(url, "/@v/")
+	if i < 0 {
+		http.NotFound(w, r)
+		return
 	}
+	enc, file := url[:i], url[i+len("/@v/"):]
+
+	url, err := module.DecodePath(enc)
+	if err != nil {
+		logError("go: %v", err)
+		w.WriteHeader(404)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	url = filepath.Join("/", url, "/@v/", file)
+
+	r.URL.Path = url
+	originURL := url
+	_ = p.replace(r)
+	url = r.URL.Path
+	logRequest(fmt.Sprintf("new url %s", url))
 
 	if strings.HasSuffix(url, listSuffix) {
 		listHandler(url, w)
