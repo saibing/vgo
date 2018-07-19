@@ -76,6 +76,10 @@ var allMutex sync.Mutex
 var modMutex sync.Mutex
 var zipMutex sync.Mutex
 
+const (
+	sepeator = "/@"
+)
+
 // ServeHTTP serve http
 func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//allMutex.Lock()
@@ -84,12 +88,12 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logRequest(fmt.Sprintf("GET %s from %s", r.URL.Path, r.RemoteAddr))
 
 	url := r.URL.Path[1:]
-	i := strings.Index(url, "/@v/")
+	i := strings.Index(url, sepeator)
 	if i < 0 {
 		http.NotFound(w, r)
 		return
 	}
-	enc, file := url[:i], url[i+len("/@v/"):]
+	enc, file := url[:i], url[i:]
 
 	url, err := module.DecodePath(enc)
 	if err != nil {
@@ -99,7 +103,7 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url = filepath.Join("/", url, "/@v/", file)
+	url = filepath.Join("/", url, file)
 
 	r.URL.Path = url
 	originURL := url
