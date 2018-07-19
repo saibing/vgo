@@ -87,6 +87,7 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	logRequest(fmt.Sprintf("GET %s from %s", r.URL.Path, r.RemoteAddr))
 
+	originURL := r.URL.Path
 	url := r.URL.Path[1:]
 	i := strings.Index(url, sepeator)
 	if i < 0 {
@@ -106,7 +107,6 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	url = filepath.Join("/", url, file)
 
 	r.URL.Path = url
-	originURL := url
 	_ = p.replace(r)
 	url = r.URL.Path
 	logRequest(fmt.Sprintf("new url %s", url))
