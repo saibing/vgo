@@ -73,8 +73,8 @@ func newProxyHandler(rootDir string, cfg *Config) http.Handler {
 }
 
 var allMutex sync.Mutex
-var modMutex sync.Mutex
-var zipMutex sync.Mutex
+var downloadMutex sync.Mutex
+
 
 const (
 	sepeator = "/@"
@@ -110,11 +110,6 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = p.replace(r)
 	url = r.URL.Path
 	logRequest(fmt.Sprintf("new url %s", url))
-
-	if strings.HasSuffix(url, listSuffix) {
-		listHandler(url, w)
-		return
-	}
 
 	if strings.HasSuffix(url, latestSuffix) {
 		p.latestVersionHandler(url, w, r)
@@ -176,16 +171,20 @@ func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r
 
 func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
-	fullPath := filepath.Join(fullWebRoot, url)
+	fullPath := filepath.Join(fullWebRoot, originURL)
+	logInfo("go: local full path is %s", fullPath)
 	if pathExist(fullPath) {
+		logInfo("go: file already exist, get from local disk")
 		p.downloadFile(originURL, w, r)
 		return
 	}
 
-	logInfo("go: fetch file from remote host: %s", url)
+	logInfo("go: file does not exist, fetch file from remote host: %s", url)
 
 	var err error
-	if strings.HasSuffix(url, infoSuffix) {
+	if strings.HasSuffix(url, listSuffix) {
+		err = p.fetch(url, listSuffix)
+	}else if strings.HasSuffix(url, infoSuffix) {
 		err = p.fetch(url, infoSuffix)
 	} else if strings.HasSuffix(url, zipSuffix) {
 		err = p.fetch(url, zipSuffix)
@@ -203,6 +202,8 @@ func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, 
 		return
 	}
 
+	logInfo("go: fetch file successfully")
+
 	p.downloadFile(originURL, w, r)
 }
 
@@ -212,6 +213,11 @@ func write404Error(format string, w http.ResponseWriter, err error) {
 	w.Write([]byte(err.Error()))
 }
 
+
+func isBang(url string) bool {
+	return strings.Contains(url, "!")
+}
+
 func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Path
 
@@ -219,6 +225,24 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
+
+	//有一个限制：replace与bang不能同时出现
+	if isBang(originURL) {
+		r.URL.Path = originURL
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	if strings.HasSuffix(url, listSuffix) {
+		p.downloadList(originURL, w, r)
+		return
+	}
+
+	if strings.HasPrefix(url, infoSuffix) {
+		p.downloadInfo(originURL, w, r)
+		return
+	}
+
 
 	if strings.HasSuffix(url, modSuffix) {
 		p.downloadMod(originURL, w, r)
@@ -234,8 +258,8 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 }
 
 func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *http.Request) {
-	zipMutex.Lock()
-	defer zipMutex.Unlock()
+	downloadMutex.Lock()
+	defer downloadMutex.Unlock()
 
 	originPath := filepath.Join(fullWebRoot, originURL)
 	r.URL.Path = originURL
@@ -342,9 +366,63 @@ func zipDir(workDir string, zipSourceDir string, target string) error {
 	return execShell(shell)
 }
 
+func (p *proxyHandler) downloadList(originURL string, w http.ResponseWriter, r *http.Request) {
+	downloadMutex.Lock()
+	defer downloadMutex.Unlock()
+
+	p.downloadNormal("list", originURL, w, r)
+}
+
+func (p *proxyHandler) downloadInfo(originURL string, w http.ResponseWriter, r *http.Request) {
+	downloadMutex.Lock()
+	defer downloadMutex.Unlock()
+
+	p.downloadNormal("info", originURL, w, r)
+}
+
+
+func (p *proxyHandler) downloadNormal(msgPrfix string, originURL string, w http.ResponseWriter, r *http.Request) {
+	downloadMutex.Lock()
+	defer downloadMutex.Unlock()
+
+	fullPath := filepath.Join(fullWebRoot, r.URL.Path)
+	originPath := filepath.Join(fullWebRoot, originURL)
+	r.URL.Path = originURL
+	logInfo("go: download %s file: %s", msgPrfix, originPath)
+	if pathExist(originPath) {
+		logInfo("go: %s file %s already exist", msgPrfix, originPath)
+		p.fileHandler.ServeHTTP(w, r)
+		return
+	}
+
+	dir := filepath.Dir(originPath)
+	if !pathExist(dir) {
+		err := os.MkdirAll(dir, fileMode)
+		if err != nil {
+			write404Error("go: create " + msgPrfix + " file parent dir failed %s", w, err)
+			return
+		}
+	}
+
+	logInfo("go: create %s file: %s", msgPrfix, originPath)
+	src, err := ioutil.ReadFile(fullPath)
+	if err != nil {
+		write404Error("go: read " + msgPrfix + " file failed %s", w, err)
+		return
+	}
+
+	err = ioutil.WriteFile(originPath, src, fileMode)
+	if err != nil {
+		write404Error("go: create " + msgPrfix + " file failed: %s", w, err)
+		return
+	}
+
+	p.fileHandler.ServeHTTP(w, r)
+}
+
 func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *http.Request) {
-	modMutex.Lock()
-	defer modMutex.Unlock()
+	downloadMutex.Lock()
+	defer downloadMutex.Unlock()
 
 	fullPath := filepath.Join(fullWebRoot, r.URL.Path)
 	originPath := filepath.Join(fullWebRoot, originURL)
@@ -360,7 +438,7 @@ func (p *proxyHandler) downloadMod(originURL string, w http.ResponseWriter, r *h
 	if !pathExist(dir) {
 		err := os.MkdirAll(dir, fileMode)
 		if err != nil {
-			write404Error("go: read mod file parent dir failed %s", w, err)
+			write404Error("go: create mod file parent dir failed %s", w, err)
 			return
 		}
 	}
@@ -404,6 +482,8 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 		_, err = zipFetch(mod, ver)
 	case infoSuffix, modSuffix:
 		_, err = infoQuery(mod, ver)
+	case listSuffix:
+		err = listHandler(filePath, )
 	}
 
 	return err
@@ -452,18 +532,12 @@ func getVersion(paths []string) string {
 	return ver
 }
 
-func listHandler(filePath string, w http.ResponseWriter) {
+func listHandler(filePath string) error {
 	url := filePath
 	mod := url[1 : len(url)-len(listSuffix)]
-	versions, err := listVersions(mod)
-	if err != nil {
-		w.WriteHeader(404)
-		w.Write([]byte(""))
-		return
-	}
-
-	w.WriteHeader(200)
-	w.Write([]byte(strings.Join(versions, "\n")))
+	logInfo("mod is %s", mod)
+	_, err := listVersions(mod)
+	return err
 }
 
 // Serve proxy serve
