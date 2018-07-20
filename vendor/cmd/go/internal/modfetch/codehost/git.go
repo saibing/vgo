@@ -380,6 +380,7 @@ func (r *gitRepo) stat(rev string) (*RevInfo, error) {
 func (r *gitRepo) statLocal(version, rev string) (*RevInfo, error) {
 	out, err := Run(r.dir, "git", "log", "-n1", "--format=format:%H %ct %D", "--no-show-signature", rev)
 	if err != nil {
+		fmt.Printf("go: %v\n", err)
 		return nil, fmt.Errorf("unknown revision %s", rev)
 	}
 	f := strings.Fields(string(out))
@@ -392,6 +393,7 @@ func (r *gitRepo) statLocal(version, rev string) (*RevInfo, error) {
 	}
 	t, err := strconv.ParseInt(f[1], 10, 64)
 	if err != nil {
+		fmt.Printf("go: %v\n", err)
 		return nil, fmt.Errorf("invalid time from git log: %q", out)
 	}
 
