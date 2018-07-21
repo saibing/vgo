@@ -483,7 +483,7 @@ func (p *proxyHandler) fetch(filePath string, suffix string) error {
 	case infoSuffix, modSuffix:
 		_, err = infoQuery(mod, ver)
 	case listSuffix:
-		err = listHandler(filePath, )
+		err = listHandler(filePath)
 	}
 
 	return err
