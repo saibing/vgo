@@ -15,7 +15,7 @@ import (
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/module"
 	"cmd/go/internal/modload"
-)
+	)
 
 const (
 	goPathEnv   = "GOPATH"
@@ -222,38 +222,45 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 	url := r.URL.Path
 
 	if originURL == url {
+		logInfo("go: normal path %s", originURL)
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
 
 	//有一个限制：replace与bang不能同时出现
 	if isBang(originURL) {
+		logInfo("go: bang path %s", originURL)
 		r.URL.Path = originURL
 		p.fileHandler.ServeHTTP(w, r)
 		return
 	}
 
 	if strings.HasSuffix(url, listSuffix) {
+		logInfo("go: replaced list path: %s", originURL)
 		p.downloadList(originURL, w, r)
 		return
 	}
 
 	if strings.HasPrefix(url, infoSuffix) {
+		logInfo("go: replaced info path: %s", originURL)
 		p.downloadInfo(originURL, w, r)
 		return
 	}
 
 
 	if strings.HasSuffix(url, modSuffix) {
+		logInfo("go: replaced mod path: %s", originURL)
 		p.downloadMod(originURL, w, r)
 		return
 	}
 
 	if strings.HasSuffix(url, zipSuffix) {
+		logInfo("go: replaced zip path: %s", originURL)
 		p.downloadZip(originURL, w, r)
 		return
 	}
 
+	logInfo("go: unkown path: %s", originURL)
 	p.fileHandler.ServeHTTP(w, r)
 }
 
@@ -367,19 +374,12 @@ func zipDir(workDir string, zipSourceDir string, target string) error {
 }
 
 func (p *proxyHandler) downloadList(originURL string, w http.ResponseWriter, r *http.Request) {
-	downloadMutex.Lock()
-	defer downloadMutex.Unlock()
-
 	p.downloadNormal("list", originURL, w, r)
 }
 
 func (p *proxyHandler) downloadInfo(originURL string, w http.ResponseWriter, r *http.Request) {
-	downloadMutex.Lock()
-	defer downloadMutex.Unlock()
-
 	p.downloadNormal("info", originURL, w, r)
 }
-
 
 func (p *proxyHandler) downloadNormal(msgPrfix string, originURL string, w http.ResponseWriter, r *http.Request) {
 	downloadMutex.Lock()
