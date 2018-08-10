@@ -1,27 +1,27 @@
 package Main
 
 import (
+	"bytes"
+	"cmd/go/internal/modfetch"
+	"cmd/go/internal/modload"
+	"cmd/go/internal/module"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
-	"bytes"
-	"encoding/json"
-	"io/ioutil"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
-	"cmd/go/internal/modfetch"
-	"cmd/go/internal/module"
-	"cmd/go/internal/modload"
-	)
+)
 
 const (
-	goPathEnv   = "GOPATH"
-	homeEnv     = "HOME"
-	webRoot     = "src/mod/cache/download/"
-	vgoModDir   = "src/mod"
+	goPathEnv = "GOPATH"
+	homeEnv   = "HOME"
+	webRoot   = "pkg/mod/cache/download/"
+	vgoModDir = "pkg/mod"
 )
 
 const (
@@ -74,7 +74,6 @@ func newProxyHandler(rootDir string, cfg *Config) http.Handler {
 
 var allMutex sync.Mutex
 var downloadMutex sync.Mutex
-
 
 const (
 	sepeator = "/@"
@@ -184,7 +183,7 @@ func (p *proxyHandler) fetchStaticFile(originURL string, w http.ResponseWriter, 
 	var err error
 	if strings.HasSuffix(url, listSuffix) {
 		err = p.fetch(url, listSuffix)
-	}else if strings.HasSuffix(url, infoSuffix) {
+	} else if strings.HasSuffix(url, infoSuffix) {
 		err = p.fetch(url, infoSuffix)
 	} else if strings.HasSuffix(url, zipSuffix) {
 		err = p.fetch(url, zipSuffix)
@@ -212,7 +211,6 @@ func write404Error(format string, w http.ResponseWriter, err error) {
 	w.WriteHeader(404)
 	w.Write([]byte(err.Error()))
 }
-
 
 func isBang(url string) bool {
 	return strings.Contains(url, "!")
@@ -246,7 +244,6 @@ func (p *proxyHandler) downloadFile(originURL string, w http.ResponseWriter, r *
 		p.downloadInfo(originURL, w, r)
 		return
 	}
-
 
 	if strings.HasSuffix(url, modSuffix) {
 		logInfo("go: replaced mod path: %s", originURL)
@@ -399,7 +396,7 @@ func (p *proxyHandler) downloadNormal(msgPrfix string, originURL string, w http.
 	if !pathExist(dir) {
 		err := os.MkdirAll(dir, fileMode)
 		if err != nil {
-			write404Error("go: create " + msgPrfix + " file parent dir failed %s", w, err)
+			write404Error("go: create "+msgPrfix+" file parent dir failed %s", w, err)
 			return
 		}
 	}
@@ -407,13 +404,13 @@ func (p *proxyHandler) downloadNormal(msgPrfix string, originURL string, w http.
 	logInfo("go: create %s file: %s", msgPrfix, originPath)
 	src, err := ioutil.ReadFile(fullPath)
 	if err != nil {
-		write404Error("go: read " + msgPrfix + " file failed %s", w, err)
+		write404Error("go: read "+msgPrfix+" file failed %s", w, err)
 		return
 	}
 
 	err = ioutil.WriteFile(originPath, src, fileMode)
 	if err != nil {
-		write404Error("go: create " + msgPrfix + " file failed: %s", w, err)
+		write404Error("go: create "+msgPrfix+" file failed: %s", w, err)
 		return
 	}
 
