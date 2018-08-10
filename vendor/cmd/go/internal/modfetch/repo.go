@@ -216,10 +216,13 @@ func getSecurityMode(path string) web.SecurityMode {
 
 // lookup returns the module with the given module path.
 func lookup(path string) (r Repo, err error) {
-	if cfg.BuildGetmode != "" {
-		return nil, fmt.Errorf("module lookup disabled by -getmode=%s", cfg.BuildGetmode)
+	if cfg.BuildMod == "vendor" {
+		return nil, fmt.Errorf("module lookup disabled by -mod=%s", cfg.BuildMod)
 	}
-	if proxyURL != "" {
+	if proxyURL == "off" {
+		return nil, fmt.Errorf("module lookup disabled by GOPROXY=%s", proxyURL)
+	}
+	if proxyURL != "" && proxyURL != "direct" {
 		return lookupProxy(path)
 	}
 
@@ -254,8 +257,8 @@ func lookupCodeRepo(rr *get.RepoRoot) (codehost.Repo, error) {
 // the original "go get" would have used, at the specific repository revision
 // (typically a commit hash, but possibly also a source control tag).
 func ImportRepoRev(path, rev string) (Repo, *RevInfo, error) {
-	if cfg.BuildGetmode != "" {
-		return nil, nil, fmt.Errorf("repo version lookup disabled by -getmode=%s", cfg.BuildGetmode)
+	if cfg.BuildMod == "vendor" || cfg.BuildMod == "readonly" {
+		return nil, nil, fmt.Errorf("repo version lookup disabled by -mod=%s", cfg.BuildMod)
 	}
 
 	// Note: Because we are converting a code reference from a legacy
