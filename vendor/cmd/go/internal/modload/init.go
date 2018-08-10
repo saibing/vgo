@@ -219,8 +219,8 @@ func die() {
 }
 
 func InitProxy(gopath string) {
-	srcMod := filepath.Join(gopath, "src/mod")
-	modfetch.SrcMod = srcMod
+	pkgMod := filepath.Join(gopath, "pkg/mod")
+	modfetch.PkgMod = pkgMod
 	modfetch.GoSumFile = filepath.Join(ModRoot, "go.sum")
 	codehost.WorkRoot = filepath.Join(srcMod, "cache/vcs")
 }
