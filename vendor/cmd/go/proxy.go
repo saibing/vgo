@@ -115,6 +115,11 @@ func (p *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasSuffix(url, listSuffix) {
+		p.newlistHandler(url, w, r)
+		return
+	}
+
 	p.fetchStaticFile(originURL, w, r)
 }
 
@@ -140,6 +145,30 @@ func (p *proxyHandler) findReplace(url string) (string, string) {
 
 	return "", ""
 }
+func (p *proxyHandler) newlistHandler(filePath string, w http.ResponseWriter, r *http.Request) {
+	url := filePath
+	mod := url[1 : len(url)-len(listSuffix)]
+	logInfo("mod is %s", mod)
+	versions, err := listVersions(mod)
+	if err != nil {
+		logError("go: %v", err)
+		w.WriteHeader(404)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	data, err := json.Marshal(versions)
+	if err != nil {
+		logError("go: %v", err)
+		w.WriteHeader(404)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.WriteHeader(200)
+	w.Write(data)
+}
+
 
 func (p *proxyHandler) latestVersionHandler(url string, w http.ResponseWriter, r *http.Request) {
 	paths := strings.Split(url, "/@")
