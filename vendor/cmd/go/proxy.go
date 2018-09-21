@@ -314,16 +314,22 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 		}
 	}
 
-	targetFileName := filepath.Base(originPath)
-	key, value := p.findReplace(originURL)
+	const prefix = "download/"
+	const suffix = "/@v"
+	pos := strings.Index(targetDir, prefix)
+	s := targetDir[pos + len(prefix) :]
+	pos = strings.Index(s, suffix)
+	s = s[:pos]
 
+	key, value := p.findReplace(originURL)
+	value = strings.Replace(s, key, value, -1)
+	key = s
+
+	logInfo("key: %s, value: %s", key, value)
+
+	targetFileName := filepath.Base(originPath)
 	targetNoExt := targetFileName[:len(targetFileName)-len(zipSuffix)]
 	sourceDir := filepath.Join(vgoModRoot, value+"@"+targetNoExt)
-
-	pos := strings.Index(targetDir, "download/")
-	s := targetDir[pos:]
-	pos = strings.Index(s, "/@")
-	s = s[:pos]
 
 	logInfo("source dir: %s", sourceDir)
 	logInfo("target dir: %s", targetDir)
