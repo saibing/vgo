@@ -1,4 +1,4 @@
-# vgoproxy
+# vgo proxy
 
 vgo包管理工具的代理服务器，支持常见的go语言库托管网站，如：
 
@@ -25,11 +25,8 @@ start vgo proxy server at http://127.0.0.1:9090
     "code.github.com",
   ],
   "replace": {
-    "golang.org/x/text": "github.com/golang/text",
-    "golang.org/x/net": "github.com/golang/net",
-    "golang.org/x/tools": "github.com/golang/tools",
-    "golang.org/x": "github.com/golang",
-    "golang.org": "github.com"
+    "google.golang.org": "github.com/golang",
+    "golang.org/x": "github.com/golang"
   }
 }
 ```
