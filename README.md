@@ -35,7 +35,7 @@ vgo proxy本身采用了[vgo](https://github.com/golang/vgo)的原型代码，�
 
 ## 客户端配置
 
-在客户端环境，配置很简单了，在使用vgo管理包的go语言工程环境中，设置环境变量：
+在客户端环境，配置很简单了，在使用go module管理包的go语言工程环境中，设置环境变量：
 
 ```bash
 export GOPROXY=http://127.0.0.1:9090
