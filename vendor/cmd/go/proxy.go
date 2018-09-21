@@ -320,7 +320,16 @@ func (p *proxyHandler) downloadZip(originURL string, w http.ResponseWriter, r *h
 	targetNoExt := targetFileName[:len(targetFileName)-len(zipSuffix)]
 	sourceDir := filepath.Join(vgoModRoot, value+"@"+targetNoExt)
 
+	pos := strings.Index(targetDir, "download/")
+	s := targetDir[pos:]
+	pos = strings.Index(s, "/@")
+	s = s[:pos]
+
+	logInfo("source dir: %s", sourceDir)
+	logInfo("target dir: %s", targetDir)
+
 	keys := strings.Split(key, string(os.PathSeparator))
+	logInfo("key list: %v", keys)
 	if len(keys) <= 1 {
 		err := fmt.Errorf("invalid module path %s", key)
 		write404Error("go: copy file failed: %s", w, err)

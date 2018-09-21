@@ -1,20 +1,8 @@
 {
   "gopath": "/home/bingo/.gomod",
-  "http": [
-    "code.huawei.com",
-    "rnd-isource.huawei.com",
-    "rnd-github.huawei.com"
-  ],
+  "http": [],
   "replace": {
-    "google.golang.org/appengine": "github.com/golang/appengine",
-    "golang.org/x/crypto": "github.com/golang/crypto",
-    "golang.org/x/sys": "github.com/golang/sys",
-    "golang.org/x/sync": "github.com/golang/sync",
-    "golang.org/x/text": "github.com/golang/text",
-    "golang.org/x/net": "github.com/golang/net",
-    "golang.org/x/tools": "github.com/golang/tools",
-    "golang.org/x/lint": "github.com/golang/lint",
-    "golang.org/x": "github.com/golang",
-    "golang.org": "github.com"
+    "google.golang.org": "github.com/golang",
+    "golang.org/x": "github.com/golang"
   }
 }
